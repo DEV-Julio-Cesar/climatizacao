@@ -1,13 +1,23 @@
-// Exemplo rápido da rota protegida
 const express = require('express');
+const multer = require('multer');
 const OsController = require('../controllers/OsController');
-const validarEntradaOs = require('../validators/osValidator'); // Seu script de validação
+const FotoController = require('../controllers/FotoController');
+const authMiddleware = require('../middlewares/authMiddleware');
+const uploadConfig = require('../config/upload');
+const { validarCriacaoOs, validarStatusOs, validarReagendamento, validarExecucaoOs } = require('../validators/osValidator');
 
-const routes = express.Router();
+const router = express.Router();
+const upload = multer(uploadConfig);
 
-// A requisição bate na rota, é validada, e só então chama o controller
-routes.post('/os', validarEntradaOs, OsController.criar);
-// A rota é protegida pelo authMiddleware para garantir que apenas técnicos logados acessem
-routes.get('/os/agenda', authMiddleware, OsController.listarAgenda);
+router.use(authMiddleware);
+router.get('/os/agenda', OsController.listarAgenda);
+router.get('/os/finalizadas', OsController.listarFinalizadas);
+router.get('/os/todas', OsController.listarTodas);
+router.get('/os/:id', OsController.detalhes);
+router.post('/os', validarCriacaoOs, OsController.criar);
+router.patch('/os/:id/execucao', validarExecucaoOs, OsController.salvarExecucao);
+router.patch('/os/:id/status', validarStatusOs, OsController.atualizarStatus);
+router.patch('/os/:id/reagendar', validarReagendamento, OsController.reagendar);
+router.post('/os/fotos', upload.single('imagem'), FotoController.upload);
 
-module.exports = routes;
+module.exports = router;

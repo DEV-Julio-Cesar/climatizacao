@@ -31,3 +31,10 @@ Thumbs.db
 # Build do frontend web
 web/dist/
 web/build/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist-test/
+mobile/.expo-export-check/
+mobile/dist/
+mobile/*.apk
+mobile/*.aab

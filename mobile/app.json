@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "ClimaSaaS",
+    "slug": "climasaas",
+    "owner": "dev-julio-cesar",
+    "description": "Gestão profissional de ordens de serviço, equipes e manutenção de climatização.",
+    "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "climasaas",
+    "icon": "./assets/climasaas-icon.png",
+    "splash": {
+      "image": "./assets/climasaas-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1F33"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.climasaas.mobile"
+    },
+    "android": {
+      "package": "com.climasaas.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/climasaas-icon.png",
+        "backgroundColor": "#0B1F33"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permita que o ClimaSaaS registre as fotos do serviço.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-sharing"
+    ]
+  }
+}

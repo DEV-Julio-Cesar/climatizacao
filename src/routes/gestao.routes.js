@@ -1,0 +1,14 @@
+const express=require('express');
+const auth=require('../middlewares/authMiddleware');
+const perfil=require('../middlewares/perfilMiddleware');
+const controller=require('../controllers/GestaoController');
+const router=express.Router();
+router.use(auth);
+router.get('/notificacoes',controller.notificacoes);
+router.patch('/notificacoes/:id/ler',controller.lerNotificacao);
+router.get('/contratos',perfil('GESTOR','ADMIN'),controller.listarContratos);
+router.post('/contratos',perfil('GESTOR','ADMIN'),controller.criarContrato);
+router.post('/contratos/:id/gerar-visita',perfil('GESTOR','ADMIN'),controller.gerarVisita);
+router.get('/relatorios/gerencial',perfil('GESTOR','ADMIN'),controller.relatorio);
+router.get('/agenda/gestao',perfil('GESTOR','ADMIN'),controller.agenda);
+module.exports=router;

@@ -1,96 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import * as SecureStore from 'expo-secure-store';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../services/api';
+import { tentarSincronizarOffline } from '../../services/SyncService';
+import { colors, shadow } from '../../styles/theme';
 
-export default function AgendaMapa({ navigation }) {
-  const [listaOs, setListaOs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    carregarAgenda();
+const statusConfig = {
+  ABERTA: { label: 'Aguardando', color: colors.primary, background: '#E5F5FA' },
+  EM_ANDAMENTO: { label: 'Em atendimento', color: '#A86600', background: '#FFF2D8' },
+};
+export default function Agenda({ navigation, onLogout }) {
+  const [ordens, setOrdens] = useState([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false);
+  const carregar = useCallback(async (refresh = false) => {
+    if (refresh) setRefreshing(true);
+    try { await tentarSincronizarOffline(); setOrdens(await api.chamadaAutenticada('/os/agenda')); }
+    catch (error) { Alert.alert('Não foi possível carregar', error.message); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
-
-  const carregarAgenda = async () => {
-    try {
-      // Chama a rota que acabamos de criar no Node.js
-      const dados = await api.chamadaAutenticada('/os/agenda', 'GET');
-      setListaOs(dados);
-    } catch (erro) {
-      Alert.alert('Erro', erro.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#0056b3" /></View>;
-  }
-
-  return (
-    <View style={styles.container}>
-      <MapView 
-        style={styles.map}
-        initialRegion={{
-          latitude: -5.79448, // Exemplo: Natal, RN (Pode ser dinâmico usando expo-location)
-          longitude: -35.21100,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        }}
-      >
-        {listaOs.map((os) => {
-          // Ignora se o cliente não tiver coordenadas salvas
-          if (!os.coordenadas_gps) return null; 
-
-          // Transforma a string do banco "-5.79,-35.21" em números reais
-          const [lat, lng] = os.coordenadas_gps.split(',').map(Number);
-
-          return (
-            <Marker 
-              key={os.id}
-              coordinate={{ latitude: lat, longitude: lng }}
-              pinColor={os.status === 'EM_ANDAMENTO' ? 'green' : 'red'}
-            >
-              {/* O Callout é o balão que aparece quando o técnico toca no pino do mapa */}
-              <Callout onPress={() => navigation.navigate('ChecklistOS', { os_id: os.id })}>
-                <View style={styles.balao}>
-                  <Text style={styles.tituloBalao}>O.S. #{os.id} - {os.tipo_servico}</Text>
-                  <Text style={styles.textoBalao}>{os.cliente_nome}</Text>
-                  <Text style={styles.linkBalao}>Toque para iniciar o serviço</Text>
-                </View>
-              </Callout>
-            </Marker>
-          );
-        })}
-      </MapView>
-
-      {/* Botão flutuante para atualizar o mapa */}
-      <TouchableOpacity style={styles.btnAtualizar} onPress={carregarAgenda}>
-        <Text style={styles.textoBtn}>Atualizar Agenda</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
+  useEffect(() => { navigation.setOptions({ headerRight: () => <View style={{flexDirection:'row'}}><TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('Notificacoes')}><Ionicons name="notifications-outline" size={22} color="#fff" /></TouchableOpacity><TouchableOpacity style={styles.headerButton} onPress={async () => { await SecureStore.deleteItemAsync('climasaas_token'); onLogout(); }}><Ionicons name="log-out-outline" size={22} color="#fff" /></TouchableOpacity></View> }); }, [navigation, onLogout]);
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loading}>Organizando sua agenda...</Text></View>;
+  return <View style={styles.container}>
+    <FlatList data={ordens} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => carregar(true)} colors={[colors.primary]} />}
+      ListHeaderComponent={<LinearGradient colors={[colors.primaryDark, colors.primary]} style={styles.hero}>
+        <View style={{ flex: 1 }}><Text style={styles.greeting}>Olá, técnico</Text><Text style={styles.heroTitle}>Sua rota de hoje</Text><View style={styles.heroLinks}><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Finalizadas')}><Ionicons name="archive-outline" size={16} color="#fff" /><Text style={styles.historyText}>Finalizadas</Text></TouchableOpacity><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Clientes')}><Ionicons name="people-outline" size={16} color="#fff" /><Text style={styles.historyText}>Clientes</Text></TouchableOpacity><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Gestao')}><Ionicons name="stats-chart-outline" size={16} color="#fff" /><Text style={styles.historyText}>Gestão</Text></TouchableOpacity></View></View>
+        <View style={styles.counter}><Text style={styles.counterNumber}>{ordens.length}</Text><Text style={styles.counterLabel}>visitas</Text></View>
+      </LinearGradient>}
+      ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><Ionicons name="checkmark-done" size={34} color={colors.success} /></View><Text style={styles.emptyTitle}>Tudo em dia!</Text><Text style={styles.emptyText}>Nenhuma visita pendente na sua agenda.</Text></View>}
+      renderItem={({ item, index }) => {
+        const badge = statusConfig[item.status] || statusConfig.ABERTA;
+        return <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('DetalhesOS', { os_id: item.id })} activeOpacity={0.8}>
+          <View style={styles.timeline}><Text style={styles.order}>#{String(item.id).padStart(4, '0')}</Text><View style={[styles.badge, { backgroundColor: badge.background }]}><View style={[styles.dot, { backgroundColor: badge.color }]} /><Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text></View></View>
+          <Text style={styles.service}>{item.tipo_servico.replaceAll('_', ' ')}</Text>
+          <View style={styles.info}><Ionicons name="person-outline" size={17} color={colors.muted} /><Text style={styles.infoText}>{item.cliente_nome}</Text></View>
+          <View style={styles.info}><Ionicons name="location-outline" size={17} color={colors.muted} /><Text style={styles.infoText} numberOfLines={1}>{item.endereco || 'Endereço não informado'}</Text></View>
+          <View style={styles.divider} /><View style={styles.cardFooter}><Text style={styles.action}>Ver detalhes do atendimento</Text><View style={styles.arrow}><Ionicons name="arrow-forward" size={17} color="#fff" /></View></View>
+        </TouchableOpacity>;
+      }}
+    />
+    <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('NovaOS')} activeOpacity={0.85}><Ionicons name="add" size={25} color="#fff" /><Text style={styles.fabText}>Nova O.S.</Text></TouchableOpacity>
+  </View>;
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  map: { width: '100%', height: '100%' },
-  balao: { width: 200, padding: 5 },
-  tituloBalao: { fontWeight: 'bold', fontSize: 16, marginBottom: 5 },
-  textoBalao: { fontSize: 14, color: '#333', marginBottom: 5 },
-  linkBalao: { fontSize: 14, color: '#0056b3', fontWeight: 'bold' },
-  
-  btnAtualizar: {
-    position: 'absolute',
-    bottom: 30,
-    alignSelf: 'center',
-    backgroundColor: '#0056b3',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 25,
-    elevation: 5, // Sombra no Android
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 // Sombra no iOS
-  },
-  textoBtn: { color: '#FFF', fontWeight: 'bold', fontSize: 16 }
+  container: { flex: 1, backgroundColor: colors.background }, center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }, loading: { marginTop: 12, color: colors.muted }, list: { padding: 16, paddingBottom: 105 },
+  headerButton: { padding: 7 }, hero: { borderRadius: 20, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, ...shadow }, greeting: { color: '#CBEAF2', fontSize: 13 }, heroTitle: { color: '#fff', fontWeight: '800', fontSize: 23, marginTop: 3 }, counter: { width: 70, height: 70, borderRadius: 22, backgroundColor: 'rgba(255,255,255,.14)', alignItems: 'center', justifyContent: 'center' }, counterNumber: { color: '#fff', fontWeight: '900', fontSize: 25 }, counterLabel: { color: '#D6F0F5', fontSize: 11 },
+  heroLinks:{flexDirection:'row',gap:7,marginTop:15}, historyLink: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,.14)', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7 }, historyText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  card: { backgroundColor: '#fff', padding: 17, borderRadius: 18, marginBottom: 13, borderWidth: 1, borderColor: colors.border, ...shadow }, timeline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, order: { color: colors.muted, fontSize: 12, fontWeight: '800', letterSpacing: .7 }, badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 }, dot: { width: 6, height: 6, borderRadius: 3 }, badgeText: { fontSize: 11, fontWeight: '800' },
+  service: { color: colors.text, fontSize: 18, fontWeight: '800', marginVertical: 13 }, info: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 7 }, infoText: { color: colors.muted, flex: 1 }, divider: { height: 1, backgroundColor: '#EDF2F4', marginVertical: 14 }, cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, action: { color: colors.primary, fontWeight: '800' }, arrow: { backgroundColor: colors.primary, width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  empty: { alignItems: 'center', paddingVertical: 60 }, emptyIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: '#E3F7F1', alignItems: 'center', justifyContent: 'center' }, emptyTitle: { fontWeight: '800', fontSize: 20, color: colors.text, marginTop: 15 }, emptyText: { color: colors.muted, marginTop: 4 },
+  fab: { position: 'absolute', right: 18, bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.primary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 18, ...shadow }, fabText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

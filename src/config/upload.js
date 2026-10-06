@@ -2,23 +2,19 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 
+const uploadDirectory = path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
+
 module.exports = {
-  // Salva os arquivos na pasta 'tmp/uploads' do servidor
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   storage: multer.diskStorage({
-    destination: path.resolve(__dirname, '..', '..', 'tmp', 'uploads'),
-    filename: (req, file, cb) => {
-      // Gera um hash aleatório para garantir que fotos com o mesmo nome não se sobrescrevam
-      const hash = crypto.randomBytes(10).toString('hex');
-      const filename = `${hash}-${file.originalname}`;
-      cb(null, filename);
-    }
+    destination: uploadDirectory,
+    filename: (_req, file, callback) => {
+      const extension = file.mimetype === 'image/png' ? '.png' : '.jpg';
+      callback(null, `${crypto.randomBytes(16).toString('hex')}${extension}`);
+    },
   }),
-  // Validação de segurança: aceita apenas imagens
-  fileFilter: (req, file, cb) => {
-    const isAccepted = ['image/png', 'image/jpeg', 'image/jpg'].includes(file.mimetype);
-    if (isAccepted) {
-      return cb(null, true);
-    }
-    return cb(new Error('Formato de arquivo não suportado. Envie JPG ou PNG.'));
-  }
+  fileFilter: (_req, file, callback) => {
+    const accepted = ['image/png', 'image/jpeg'].includes(file.mimetype);
+    callback(accepted ? null : new Error('Formato não suportado. Envie JPG ou PNG.'), accepted);
+  },
 };

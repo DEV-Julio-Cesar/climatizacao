@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "migrate": "node src/database/migrate.js",
+    "seed": "node src/webhooks/seed.js",
+    "seed:catalogo": "node src/webhooks/seed-catalogo.js",
+    "test": "node --test --test-isolation=none test/*.test.js",
+    "check": "node --check server.js && node --check src/app.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

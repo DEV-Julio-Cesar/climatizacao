@@ -18,6 +18,10 @@ class WhatsAppService {
     };
   }
 
+  configurado() {
+    return Boolean(this.phoneNumberId && this.token && !this.phoneNumberId.startsWith('SEU_') && !this.token.startsWith('SEU_'));
+  }
+
   // Envia uma mensagem de texto simples
   async enviarMensagem(telefone, mensagem) {
     const payload = {
