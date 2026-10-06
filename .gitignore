@@ -1,0 +1,33 @@
+# Dependências
+node_modules/
+.npm
+
+# Variáveis de ambiente — NUNCA subir para o GitHub
+.env
+.env.local
+.env.production
+
+# Banco de dados local
+*.sqlite
+*.sqlite3
+
+# Uploads e arquivos temporários gerados em runtime
+tmp/
+uploads/
+*.pdf
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Build do frontend web
+web/dist/
+web/build/
