@@ -1,0 +1,1 @@
+{"name":"climasaas-web","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite","build":"vite build","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","axios":"latest","leaflet":"latest","moment":"latest","react":"latest","react-big-calendar":"latest","react-dom":"latest","react-leaflet":"latest","vite":"latest"},"devDependencies":{}}

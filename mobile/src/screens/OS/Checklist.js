@@ -24,7 +24,7 @@ export default function Checklist({ navigation }) {
       }
       const resposta = await api.chamadaAutenticada('/os', 'POST', payload);
       await api.chamadaAutenticada(`/os/${resposta.os.id}/status`, 'PATCH', { novo_status: 'EM_ANDAMENTO' });
-      navigation.replace('CameraOS', { os_id: resposta.os.id, tipo: 'ANTES' });
+      navigation.replace('DetalhesOS', { os_id: resposta.os.id });
     } catch (error) { Alert.alert('Falha ao salvar', error.message); }
     finally { setLoading(false); }
   };

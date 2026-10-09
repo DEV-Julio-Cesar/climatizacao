@@ -28,7 +28,7 @@ export default function PainelDespacho() {
       // 2. Busca todas as O.S. agendadas para formatar no padrão do Calendário
       const resOs = await api.get('/os/todas');
       
-      const osFormatadas = resOs.data.map(os => ({
+      const osFormatadas = resOs.data.filter(os => os.agendado_para).map(os => ({
         id: os.id,
         title: `O.S. #${os.id} - ${os.cliente_nome} (${os.tipo_servico})`,
         start: new Date(os.agendado_para),

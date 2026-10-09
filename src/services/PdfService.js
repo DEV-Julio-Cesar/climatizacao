@@ -37,6 +37,7 @@ class PdfService {
         .text(`Recomendações: ${os.recomendacoes || '-'}`)
         .text(`Garantia: ${os.garantia_dias || 0} dias`)
         .text(`Retorno necessário: ${os.retorno_necessario ? 'Sim' : 'Não'}`)
+        .text(`Tempo efetivo: ${os.iniciado_em && os.finalizado_em ? Math.max(0, Math.round((new Date(os.finalizado_em)-new Date(os.iniciado_em))/60000-(os.total_pausa_segundos||0)/60)) : 0} minutos`)
         .text(`Valor total: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(os.valor_total || 0)}`);
 
       if (os.checklist?.length) {
@@ -69,7 +70,8 @@ class PdfService {
         doc.addPage().fontSize(14).text('Registros e assinatura', { underline: true }).moveDown();
         for (const anexo of anexos) {
           if (doc.y > 620) doc.addPage();
-          doc.fontSize(11).text(anexo.tipo);
+          doc.fontSize(11).text(anexo.tipo === 'ASSINATURA' ? 'Assinatura do cliente' : `Evidência${anexo.comentario ? ` — ${anexo.comentario}` : ''}`);
+          if(anexo.capturada_em)doc.fontSize(9).fillColor('#52606D').text(`Capturada em ${new Date(anexo.capturada_em).toLocaleString('pt-BR')}${anexo.latitude ? ` · GPS ${anexo.latitude}, ${anexo.longitude}` : ''}`).fillColor('#000');
           try { doc.image(anexo.path, { fit: [480, 260], align: 'center' }).moveDown(); }
           catch (_error) { doc.text('Não foi possível renderizar esta imagem.').moveDown(); }
         }

@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { colors, shadow } from '../../styles/theme';
+import { registrarDispositivoPush } from '../../services/notifications';
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('admin@climasaas.com');
@@ -18,7 +19,8 @@ export default function LoginScreen({ onLogin }) {
       const dados = await api.login(email.trim(), senha);
       await SecureStore.setItemAsync('climasaas_token', dados.token);
       await SecureStore.setItemAsync('climasaas_usuario', JSON.stringify(dados.usuario));
-      onLogin(dados.token);
+      void registrarDispositivoPush().catch(() => {});
+      onLogin(dados.token, dados.usuario);
     } catch (error) { Alert.alert('Não foi possível entrar', error.message); }
     finally { setLoading(false); }
   };

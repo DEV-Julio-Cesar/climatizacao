@@ -47,6 +47,7 @@ class OsModel {
   async buscarDetalhes(id, empresaId) {
     const principal = await db.query(
       `SELECT os.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.endereco AS cliente_endereco,
+              c.cep AS cliente_cep, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
               c.latitude, c.longitude, u.nome AS tecnico_nome, a.marca AS aparelho_marca,
               a.modelo AS aparelho_modelo, a.capacidade AS aparelho_capacidade
        FROM ordens_servico os
@@ -56,21 +57,41 @@ class OsModel {
        WHERE os.id=$1 AND os.empresa_id=$2 AND os.deleted_at IS NULL`, [id, empresaId]);
     const os = principal.rows[0];
     if (!os) return null;
-    const [historico, checklist, medicoes, itens, fotos] = await Promise.all([
+    const [historico, checklist, medicoes, itens, fotos, linhaTempo, checklistModelo] = await Promise.all([
       os.aparelho_id ? db.query(
         `SELECT id,tipo_servico,diagnostico,solucao_aplicada,finalizado_em FROM ordens_servico
          WHERE aparelho_id=$1 AND empresa_id=$2 AND id<>$3 AND status='FINALIZADA' AND deleted_at IS NULL
          ORDER BY finalizado_em DESC LIMIT 10`, [os.aparelho_id, empresaId, id]) : { rows: [] },
       db.query('SELECT item,conforme,observacao FROM os_checklist_respostas WHERE os_id=$1 ORDER BY id', [id]),
       db.query('SELECT * FROM os_medicoes WHERE os_id=$1', [id]),
-      db.query('SELECT tipo,referencia_id,descricao,quantidade,valor_unitario FROM os_itens WHERE os_id=$1 ORDER BY id', [id]),
-      db.query('SELECT tipo,url FROM os_fotos WHERE os_id=$1 ORDER BY created_at', [id]),
+      db.query(`SELECT oi.tipo,oi.referencia_id,oi.descricao,oi.quantidade,oi.valor_unitario,p.estoque AS estoque_disponivel
+        FROM os_itens oi LEFT JOIN produtos p ON p.id=oi.referencia_id AND oi.tipo='PECA'
+        WHERE oi.os_id=$1 ORDER BY oi.id`, [id]),
+      db.query('SELECT id,tipo,url,comentario,latitude,longitude,capturada_em,created_at FROM os_fotos WHERE os_id=$1 ORDER BY capturada_em,created_at', [id]),
+      db.query(`SELECT h.status_anterior,h.status_novo,h.observacao,h.created_at,u.nome usuario_nome
+        FROM os_historico h JOIN usuarios u ON u.id=h.modificado_por
+        WHERE h.os_id=$1 ORDER BY h.created_at DESC`, [id]),
+      db.query(`SELECT item,obrigatorio,exige_observacao_nao_conforme,exige_foto,medicao_campo,valor_minimo,valor_maximo FROM checklist_modelos
+        WHERE tipo_servico=$1 AND ativo=TRUE AND (empresa_id=$2 OR empresa_id IS NULL)
+          AND (empresa_id=$2 OR NOT EXISTS(SELECT 1 FROM checklist_modelos x WHERE x.empresa_id=$2 AND x.tipo_servico=$1 AND x.ativo=TRUE))
+        ORDER BY empresa_id NULLS LAST,ordem,id`, [os.tipo_servico, empresaId]),
     ]);
     return { ...os, historico_equipamento: historico.rows, checklist: checklist.rows,
-      medicoes: medicoes.rows[0] || null, itens: itens.rows, fotos: fotos.rows };
+      medicoes: medicoes.rows[0] || null, itens: itens.rows, fotos: fotos.rows, linha_tempo: linhaTempo.rows,
+      checklist_modelo: checklistModelo.rows };
   }
 
   async salvarExecucao(id, empresaId, dados, executor) {
+    for (const item of dados.itens.filter((valor) => valor.referencia_id)) {
+      const tabela = item.tipo === 'PECA' ? 'produtos' : 'catalogo_servicos';
+      const referencia = await executor.query(
+        `SELECT id${item.tipo === 'PECA' ? ',estoque' : ''} FROM ${tabela} WHERE id=$1 AND empresa_id=$2 AND ativo=TRUE`,
+        [item.referencia_id, empresaId]);
+      if (!referencia.rows[0]) throw Object.assign(new Error(`Item de catálogo inválido: ${item.descricao}.`), { status: 400 });
+      if (item.tipo === 'PECA' && Number(referencia.rows[0].estoque) < Number(item.quantidade)) {
+        throw Object.assign(new Error(`Estoque insuficiente para ${item.descricao}. Disponível: ${referencia.rows[0].estoque}.`), { status: 422 });
+      }
+    }
     const total = dados.itens.reduce((s, item) => s + item.quantidade * item.valor_unitario, 0);
     await executor.query(
       `UPDATE ordens_servico SET diagnostico=$1,solucao_aplicada=$2,recomendacoes=$3,
@@ -83,13 +104,15 @@ class OsModel {
       [id, r.item, r.conforme, r.observacao || null]);
     const m = dados.medicoes;
     await executor.query(
-      `INSERT INTO os_medicoes (os_id,temperatura_retorno,temperatura_insuflamento,tensao,corrente,pressao_baixa,pressao_alta,umidade,tipo_gas)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (os_id) DO UPDATE SET
+      `INSERT INTO os_medicoes (os_id,temperatura_retorno,temperatura_insuflamento,tensao,corrente,pressao_baixa,pressao_alta,umidade,superaquecimento,subresfriamento,tipo_gas)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (os_id) DO UPDATE SET
        temperatura_retorno=EXCLUDED.temperatura_retorno,temperatura_insuflamento=EXCLUDED.temperatura_insuflamento,
        tensao=EXCLUDED.tensao,corrente=EXCLUDED.corrente,pressao_baixa=EXCLUDED.pressao_baixa,
-       pressao_alta=EXCLUDED.pressao_alta,umidade=EXCLUDED.umidade,tipo_gas=EXCLUDED.tipo_gas,updated_at=NOW()`,
+       pressao_alta=EXCLUDED.pressao_alta,umidade=EXCLUDED.umidade,superaquecimento=EXCLUDED.superaquecimento,
+       subresfriamento=EXCLUDED.subresfriamento,tipo_gas=EXCLUDED.tipo_gas,updated_at=NOW()`,
       [id, m.temperatura_retorno || null, m.temperatura_insuflamento || null, m.tensao || null,
-        m.corrente || null, m.pressao_baixa || null, m.pressao_alta || null, m.umidade || null, m.tipo_gas || null]);
+        m.corrente || null, m.pressao_baixa || null, m.pressao_alta || null, m.umidade || null,
+        m.superaquecimento || null, m.subresfriamento || null, m.tipo_gas || null]);
     await executor.query('DELETE FROM os_itens WHERE os_id=$1', [id]);
     for (const item of dados.itens) await executor.query(
       'INSERT INTO os_itens (os_id,tipo,referencia_id,descricao,quantidade,valor_unitario) VALUES ($1,$2,$3,$4,$5,$6)',
@@ -105,16 +128,27 @@ class OsModel {
     );
   }
 
-  async listarAgenda(tecnicoId, empresaId) {
+  async listarAgenda(tecnicoId, empresaId, filtro = 'HOJE', busca = '') {
+    const condicoes = [
+      'os.tecnico_id = $1', 'os.empresa_id = $2',
+      "os.status IN ('ABERTA', 'EM_ANDAMENTO')", 'os.deleted_at IS NULL',
+    ];
+    if (filtro === 'HOJE') condicoes.push('os.agendado_para::date = CURRENT_DATE');
+    if (filtro === 'ATRASADAS') condicoes.push('os.agendado_para < CURRENT_DATE');
+    if (filtro === 'PROXIMAS') condicoes.push("os.agendado_para >= CURRENT_DATE + INTERVAL '1 day'");
+    const params = [tecnicoId, empresaId];
+    if (busca) {
+      params.push(`%${busca}%`);
+      condicoes.push(`(c.nome ILIKE $${params.length} OR os.id::text ILIKE $${params.length} OR c.endereco ILIKE $${params.length})`);
+    }
     const result = await db.query(
       `SELECT os.id, os.tipo_servico, os.descricao_problema, os.status, os.agendado_para,
               c.nome AS cliente_nome, c.endereco, c.latitude, c.longitude
        FROM ordens_servico os
        JOIN clientes c ON c.id = os.cliente_id AND c.empresa_id = os.empresa_id
-       WHERE os.tecnico_id = $1 AND os.empresa_id = $2
-         AND os.status IN ('ABERTA', 'EM_ANDAMENTO') AND os.deleted_at IS NULL
+       WHERE ${condicoes.join(' AND ')}
        ORDER BY os.agendado_para NULLS LAST, os.created_at`,
-      [tecnicoId, empresaId]
+      params
     );
     return result.rows;
   }

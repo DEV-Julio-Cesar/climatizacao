@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const db = require('../config/database');
+const { padroes } = require('../middlewares/permissaoMiddleware');
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(150),
@@ -22,11 +23,15 @@ class AuthController {
       const usuario = result.rows[0];
       const senhaValida = usuario && await bcrypt.compare(entrada.data.senha, usuario.senha_hash);
       if (!senhaValida) return res.status(401).json({ erro: 'Credenciais inválidas.' });
-      const token = jwt.sign({ usuario_id: usuario.id, empresa_id: usuario.empresa_id, perfil: usuario.perfil },
+      const overrides = await db.query('SELECT permissao,permitido FROM usuario_permissoes WHERE usuario_id=$1', [usuario.id]);
+      const base = new Set(padroes[usuario.perfil] || []);
+      for (const item of overrides.rows) item.permitido ? base.add(item.permissao) : base.delete(item.permissao);
+      const permissoes = [...base];
+      const token = jwt.sign({ usuario_id: usuario.id, empresa_id: usuario.empresa_id, perfil: usuario.perfil, permissoes },
         process.env.JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' });
       return res.json({
         mensagem: 'Login realizado com sucesso.',
-        usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresa_id: usuario.empresa_id },
+        usuario: { id: usuario.id, nome: usuario.nome, perfil: usuario.perfil, empresa_id: usuario.empresa_id, permissoes },
         token,
       });
     } catch (error) {

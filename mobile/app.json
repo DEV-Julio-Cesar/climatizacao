@@ -29,7 +29,9 @@
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE"
       ]
     },
     "plugins": [
@@ -42,7 +44,19 @@
       ],
       "expo-secure-store",
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permita que o ClimaSaaS registre a localização do atendimento."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "atendimentos"
+        }
+      ]
     ],
     "extra": {
       "eas": {

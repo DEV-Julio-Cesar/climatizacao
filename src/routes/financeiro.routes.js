@@ -1,4 +1,20 @@
-const r=require('express').Router(),auth=require('../middlewares/authMiddleware'),c=require('../controllers/FinanceiroController');r.use(auth);
-r.get('/catalogo',c.catalogo);r.post('/catalogo',c.criarCatalogo);r.post('/produtos/:id/movimentar',c.movimentar);
-r.get('/orcamentos',c.listarOrcamentos);r.post('/orcamentos',c.criarOrcamento);r.get('/orcamentos/:id',c.detalheOrcamento);r.patch('/orcamentos/:id/status',c.statusOrcamento);r.post('/orcamentos/:id/converter',c.converter);
-r.post('/os/:id/pagamentos',c.registrarPagamento);r.get('/financeiro/dashboard',c.dashboard);module.exports=r;
+const router = require('express').Router();
+const auth = require('../middlewares/authMiddleware');
+const permitir = require('../middlewares/permissaoMiddleware');
+const controller = require('../controllers/FinanceiroController');
+
+router.use(auth);
+router.get('/catalogo', permitir('ESTOQUE_VISUALIZAR'), controller.catalogo);
+router.post('/catalogo', permitir('ESTOQUE_GERENCIAR'), controller.criarCatalogo);
+router.post('/produtos/:id/movimentar', permitir('ESTOQUE_GERENCIAR'), controller.movimentar);
+router.get('/estoque/tecnicos', permitir('ESTOQUE_VISUALIZAR'), controller.estoqueTecnicos);
+router.post('/produtos/:id/transferir-tecnico', permitir('ESTOQUE_GERENCIAR'), controller.transferirTecnico);
+router.get('/orcamentos', permitir('FINANCEIRO_VISUALIZAR'), controller.listarOrcamentos);
+router.post('/orcamentos', permitir('FINANCEIRO_GERENCIAR'), controller.criarOrcamento);
+router.get('/orcamentos/:id', permitir('FINANCEIRO_VISUALIZAR'), controller.detalheOrcamento);
+router.patch('/orcamentos/:id/status', permitir('FINANCEIRO_GERENCIAR'), controller.statusOrcamento);
+router.post('/orcamentos/:id/converter', permitir('FINANCEIRO_GERENCIAR'), controller.converter);
+router.post('/os/:id/pagamentos', permitir('FINANCEIRO_GERENCIAR'), controller.registrarPagamento);
+router.get('/financeiro/dashboard', permitir('FINANCEIRO_VISUALIZAR'), controller.dashboard);
+
+module.exports = router;

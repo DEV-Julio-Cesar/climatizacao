@@ -143,6 +143,29 @@ CREATE TABLE IF NOT EXISTS os_checklist_respostas (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS usuario_permissoes (
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  permissao VARCHAR(60) NOT NULL,
+  permitido BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (usuario_id, permissao)
+);
+
+CREATE TABLE IF NOT EXISTS checklist_modelos (
+  id SERIAL PRIMARY KEY, empresa_id INTEGER REFERENCES empresas(id) ON DELETE CASCADE,
+  tipo_servico VARCHAR(30) NOT NULL, item VARCHAR(150) NOT NULL, ordem INTEGER NOT NULL DEFAULT 0,
+  obrigatorio BOOLEAN NOT NULL DEFAULT TRUE, ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_modelo_unico ON checklist_modelos (COALESCE(empresa_id,0),tipo_servico,item);
+INSERT INTO checklist_modelos (empresa_id,tipo_servico,item,ordem) VALUES
+  (NULL,'LIMPEZA','Filtros higienizados',1),(NULL,'LIMPEZA','Serpentina evaporadora limpa',2),(NULL,'LIMPEZA','Condensadora limpa',3),(NULL,'LIMPEZA','Dreno desobstruído',4),(NULL,'LIMPEZA','Funcionamento testado',5),
+  (NULL,'INSTALACAO','Suportes fixados',1),(NULL,'INSTALACAO','Tubulação isolada',2),(NULL,'INSTALACAO','Dreno testado',3),(NULL,'INSTALACAO','Vácuo realizado',4),(NULL,'INSTALACAO','Funcionamento testado',5),
+  (NULL,'REMOCAO','Gás recolhido',1),(NULL,'REMOCAO','Rede elétrica isolada',2),(NULL,'REMOCAO','Tubulação vedada',3),(NULL,'REMOCAO','Local deixado limpo',4),
+  (NULL,'PREVENTIVA','Filtros verificados',1),(NULL,'PREVENTIVA','Serpentinas verificadas',2),(NULL,'PREVENTIVA','Dreno verificado',3),(NULL,'PREVENTIVA','Conexões elétricas verificadas',4),(NULL,'PREVENTIVA','Operação testada',5),
+  (NULL,'PROBLEMA_TECNICO','Defeito reproduzido',1),(NULL,'PROBLEMA_TECNICO','Componentes testados',2),(NULL,'PROBLEMA_TECNICO','Causa identificada',3),(NULL,'PROBLEMA_TECNICO','Reparo testado',4),(NULL,'PROBLEMA_TECNICO','Cliente orientado',5)
+ON CONFLICT DO NOTHING;
+
 -- 9. MEDIÇÕES TÉCNICAS
 CREATE TABLE IF NOT EXISTS os_medicoes (
   id                    SERIAL PRIMARY KEY,
@@ -154,6 +177,8 @@ CREATE TABLE IF NOT EXISTS os_medicoes (
   pressao_baixa         NUMERIC(8,2),
   pressao_alta          NUMERIC(8,2),
   umidade               NUMERIC(6,2),
+  superaquecimento      NUMERIC(7,2),
+  subresfriamento       NUMERIC(7,2),
   tipo_gas              VARCHAR(50),
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -182,7 +207,7 @@ CREATE TABLE IF NOT EXISTS produtos (
   sku VARCHAR(80), categoria VARCHAR(100), unidade VARCHAR(20) NOT NULL DEFAULT 'UN',
   custo NUMERIC(10,2) NOT NULL DEFAULT 0, preco NUMERIC(10,2) NOT NULL DEFAULT 0,
   estoque NUMERIC(12,2) NOT NULL DEFAULT 0, estoque_minimo NUMERIC(12,2) NOT NULL DEFAULT 0,
-  ativo BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(empresa_id, sku)
+  ativo BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(empresa_id, sku)
 );
 CREATE TABLE IF NOT EXISTS estoque_movimentos (
   id SERIAL PRIMARY KEY, empresa_id INTEGER NOT NULL REFERENCES empresas(id), produto_id INTEGER NOT NULL REFERENCES produtos(id),
@@ -244,7 +269,18 @@ ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS recomendacoes TEXT;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS garantia_dias INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS retorno_necessario BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS iniciado_em TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS a_caminho_em TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkin_em TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkin_latitude NUMERIC(10,7);
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkin_longitude NUMERIC(10,7);
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkout_em TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkout_latitude NUMERIC(10,7);
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS checkout_longitude NUMERIC(10,7);
 ALTER TABLE os_historico ADD COLUMN IF NOT EXISTS observacao TEXT;
+ALTER TABLE os_fotos DROP CONSTRAINT IF EXISTS os_fotos_tipo_check;
+ALTER TABLE os_fotos ADD CONSTRAINT os_fotos_tipo_check CHECK (tipo IN ('ANTES','DEPOIS','ASSINATURA','EVIDENCIA'));
+ALTER TABLE os_medicoes ADD COLUMN IF NOT EXISTS superaquecimento NUMERIC(7,2);
+ALTER TABLE os_medicoes ADD COLUMN IF NOT EXISTS subresfriamento NUMERIC(7,2);
 CREATE INDEX IF NOT EXISTS idx_os_agenda     ON ordens_servico(empresa_id, tecnico_id, agendado_para);
 CREATE INDEX IF NOT EXISTS idx_checklist_os  ON os_checklist_respostas(os_id);
 CREATE INDEX IF NOT EXISTS idx_itens_os      ON os_itens(os_id);
@@ -254,6 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_orcamentos_empresa ON orcamentos(empresa_id,statu
 CREATE INDEX IF NOT EXISTS idx_pagamentos_os ON pagamentos(os_id);
 ALTER TABLE os_itens ADD COLUMN IF NOT EXISTS referencia_id INTEGER;
 ALTER TABLE os_itens ADD COLUMN IF NOT EXISTS estoque_baixado BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE produtos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- 13. CONTRATOS DE MANUTENCAO E NOTIFICACOES
 CREATE TABLE IF NOT EXISTS contratos (
@@ -274,7 +311,47 @@ CREATE TABLE IF NOT EXISTS notificacoes (
   referencia_tipo VARCHAR(30), referencia_id INTEGER, lida BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS dispositivos_push (
+  id SERIAL PRIMARY KEY, empresa_id INTEGER NOT NULL REFERENCES empresas(id), usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  token VARCHAR(255) NOT NULL UNIQUE, plataforma VARCHAR(20), ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_push_usuario ON dispositivos_push(usuario_id,ativo);
 CREATE INDEX IF NOT EXISTS idx_contratos_empresa ON contratos(empresa_id,status,proxima_visita);
 CREATE INDEX IF NOT EXISTS idx_notificacoes_usuario ON notificacoes(empresa_id,usuario_id,lida,created_at);
+
+-- 14. OPERACAO DE CAMPO AVANCADA
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS comentario VARCHAR(500);
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7);
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS capturada_em TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(80);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_os_fotos_client_uuid ON os_fotos(client_uuid) WHERE client_uuid IS NOT NULL;
+
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS pausado_em TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS total_pausa_segundos INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS situacao_pendencia VARCHAR(30);
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS motivo_pendencia VARCHAR(1000);
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS retorno_de_os_id INTEGER REFERENCES ordens_servico(id);
+CREATE TABLE IF NOT EXISTS os_pausas (
+  id SERIAL PRIMARY KEY, os_id INTEGER NOT NULL REFERENCES ordens_servico(id) ON DELETE CASCADE,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id), motivo VARCHAR(300),
+  iniciado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), retomado_em TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_os_pausas_os ON os_pausas(os_id,iniciado_em);
+
+CREATE TABLE IF NOT EXISTS estoque_tecnico (
+  tecnico_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  produto_id INTEGER NOT NULL REFERENCES produtos(id) ON DELETE CASCADE,
+  quantidade NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK(quantidade >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(tecnico_id,produto_id)
+);
+ALTER TABLE estoque_movimentos ADD COLUMN IF NOT EXISTS tecnico_id INTEGER REFERENCES usuarios(id);
+
+ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS exige_observacao_nao_conforme BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS exige_foto BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS medicao_campo VARCHAR(50);
+ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS valor_minimo NUMERIC(10,2);
+ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS valor_maximo NUMERIC(10,2);
 
 -- Dados de demonstração são criados separadamente por `npm run seed`.

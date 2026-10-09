@@ -5,6 +5,8 @@ import { fetch as expoFetch } from 'expo/fetch';
 
 const localHost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || `http://${localHost}:3000`;
+let aoExpirarSessao = null;
+export const configurarSessaoExpirada = (handler) => { aoExpirarSessao = handler; };
 
 async function parse(response) {
   const text = await response.text();
@@ -35,13 +37,14 @@ export const api = {
       headers: { Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (response.status === 401) await SecureStore.deleteItemAsync('climasaas_token');
+    if (response.status === 401) { await SecureStore.deleteItemAsync('climasaas_token'); aoExpirarSessao?.(); }
     return parse(response);
   },
-  async uploadFoto(osId, tipo, arquivo) {
+  async uploadFoto(osId, tipo, arquivo, metadados = {}) {
     const form = new FormData();
     form.append('os_id', String(osId));
     form.append('tipo', tipo);
+    Object.entries(metadados).forEach(([chave, valor]) => { if (valor !== undefined && valor !== null && valor !== '') form.append(chave, String(valor)); });
     const file = new File(arquivo.uri);
     form.append('imagem', file, arquivo.name || file.name);
     return parse(await expoFetch(`${BASE_URL}/os/fotos`, {

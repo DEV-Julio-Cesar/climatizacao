@@ -22,6 +22,17 @@ const reagendarSchema = z.object({
   agendado_para: z.string().datetime({ offset: true }),
 }).strict();
 
+const eventoSchema = z.object({
+  evento: z.enum(['A_CAMINHO', 'CHECKIN', 'CHECKOUT', 'PAUSAR', 'RETOMAR']),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  motivo: z.string().trim().max(300).optional(),
+}).strict().superRefine((dados, ctx) => {
+  if (['CHECKIN', 'CHECKOUT'].includes(dados.evento) && (dados.latitude === undefined || dados.longitude === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Localização obrigatória para check-in e check-out.', path: ['latitude'] });
+  }
+});
+
 const numeroOpcional = z.union([z.coerce.number(), z.literal('').transform(() => undefined)]).optional();
 const execucaoSchema = z.object({
   diagnostico: z.string().trim().min(5).max(3000),
@@ -42,6 +53,8 @@ const execucaoSchema = z.object({
     pressao_baixa: numeroOpcional,
     pressao_alta: numeroOpcional,
     umidade: numeroOpcional,
+    superaquecimento: numeroOpcional,
+    subresfriamento: numeroOpcional,
     tipo_gas: z.string().trim().max(50).optional().default(''),
   }).strict(),
   itens: z.array(z.object({
@@ -74,6 +87,7 @@ module.exports = {
   validarCriacaoOs: validar(criarOsSchema),
   validarStatusOs: validar(statusSchema),
   validarReagendamento: validar(reagendarSchema),
+  validarEventoOs: validar(eventoSchema),
   validarExecucaoOs: validar(execucaoSchema),
   tiposServico,
   statusOs,

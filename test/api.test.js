@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
 const createApp = require('../src/app');
 const db = require('../src/config/database');
+const OsModel = require('../src/models/OsModel');
 
 async function request(server, pathname, options = {}) {
   const address = server.address();
@@ -14,6 +15,7 @@ async function request(server, pathname, options = {}) {
 }
 
 const token = jwt.sign({ usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
+const tokenRestrito = jwt.sign({ usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
 let server;
 
 test.before(() => { server = createApp().listen(0); });
@@ -78,4 +80,45 @@ test('técnico não pode reagendar O.S.', async () => {
     body: JSON.stringify({ tecnico_id: 2, agendado_para: '2026-10-07T12:00:00-03:00' }),
   });
   assert.equal(result.status, 403);
+});
+
+test('permissão granular bloqueia agenda mesmo com token válido', async () => {
+  const result = await request(server, '/os/agenda', { headers: { Authorization: `Bearer ${tokenRestrito}` } });
+  assert.equal(result.status, 403);
+  assert.equal(result.body.erro, 'Permissão necessária: AGENDA_VISUALIZAR.');
+});
+
+test('agenda rejeita filtro desconhecido antes de consultar o banco', async () => {
+  const result = await request(server, '/os/agenda?filtro=QUALQUER', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.erro, 'Filtro de agenda inválido.');
+});
+
+test('check-in exige coordenadas válidas', async () => {
+  const result = await request(server, '/os/10/eventos', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ evento: 'CHECKIN' }),
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.erro, 'Falha na validação de entrada.');
+});
+
+test('execução rejeita item de catálogo de outra empresa', async () => {
+  const executor = { query: async () => ({ rows: [] }) };
+  await assert.rejects(() => OsModel.salvarExecucao(10, 3, {
+    diagnostico: 'Teste', solucao_aplicada: 'Teste', recomendacoes: '', garantia_dias: 0,
+    retorno_necessario: false, checklist: [], medicoes: {},
+    itens: [{ tipo: 'PECA', referencia_id: 999, descricao: 'Peça externa', quantidade: 1, valor_unitario: 10 }],
+  }, executor), (error) => error.status === 400 && /catálogo inválido/.test(error.message));
+});
+
+test('registro push rejeita token malformado', async () => {
+  const result = await request(server, '/dispositivos/push', {
+    method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body:JSON.stringify({ token:'token-invalido', plataforma:'android' }),
+  });
+  assert.equal(result.status, 400);
 });
