@@ -11,11 +11,13 @@ export default function ClienteForm({ route, navigation }) {
   const [loading, setLoading] = useState(false); const [localizando, setLocalizando] = useState(false);
   const campo = (chave, valor) => setDados({ ...dados, [chave]: valor, ...(['endereco','cep','cidade','estado'].includes(chave) ? { latitude:null, longitude:null } : {}) });
   const enderecoCompleto = () => [dados.endereco, dados.cidade, dados.estado, dados.cep, 'Brasil'].filter(Boolean).join(', ');
+  const autorizarLocalizacao=async()=>{const permissao=await Location.requestForegroundPermissionsAsync();if(permissao.status!=='granted')throw new Error('Permita o acesso à localização nas configurações do celular para localizar o endereço.');const ativo=await Location.hasServicesEnabledAsync();if(!ativo)throw new Error('Ative a localização (GPS) do celular e tente novamente.');};
 
   const localizar = async () => {
     if (!dados.endereco || !dados.cidade) return Alert.alert('Localização', 'Informe pelo menos endereço e cidade.');
     setLocalizando(true);
     try {
+      await autorizarLocalizacao();
       const encontrados = await Location.geocodeAsync(enderecoCompleto());
       if (!encontrados[0]) return Alert.alert('Localização', 'Endereço não encontrado. Confira os dados informados.');
       setDados({ ...dados, latitude: encontrados[0].latitude, longitude: encontrados[0].longitude });
@@ -27,7 +29,7 @@ export default function ClienteForm({ route, navigation }) {
     try {
       let payload = { ...dados };
       if (!payload.latitude && payload.endereco && payload.cidade) {
-        const encontrados = await Location.geocodeAsync(enderecoCompleto()).catch(() => []);
+        const encontrados = await autorizarLocalizacao().then(()=>Location.geocodeAsync(enderecoCompleto())).catch(() => []);
         if (encontrados[0]) payload = { ...payload, latitude: encontrados[0].latitude, longitude: encontrados[0].longitude };
       }
       await api.chamadaAutenticada(cliente ? `/clientes/${cliente.id}` : '/clientes', cliente ? 'PATCH' : 'POST', payload);

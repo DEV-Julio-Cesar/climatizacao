@@ -16,6 +16,7 @@ export async function tentarSincronizarOffline(itemId = null) {
       else if (item.tipo === 'EVENTO_OS') await api.chamadaAutenticada(`/os/${payload.os_id}/eventos`, 'POST', payload.dados);
       else if (item.tipo === 'EXECUCAO_OS') await api.chamadaAutenticada(`/os/${payload.os_id}/execucao`, 'PATCH', payload.dados);
       else if (item.tipo === 'RETORNO_OS') await api.chamadaAutenticada(`/os/${payload.os_id}/retorno`, 'POST', payload.dados);
+      else if (item.tipo === 'AGENDAR_OS') await api.chamadaAutenticada(`/os/${payload.os_id}/agendar`, 'PATCH', payload.dados);
       else if (item.tipo === 'FOTO_OS') { await api.uploadFoto(payload.os_id, payload.tipo, { uri:payload.uri, name:payload.nome, type:payload.mime }, payload.metadados || {}); await FileSystem.deleteAsync(payload.uri, { idempotent:true }).catch(()=>{}); }
       await removerFila(item.id); enviados += 1;
     } catch (error) {

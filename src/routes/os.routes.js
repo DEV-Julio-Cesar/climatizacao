@@ -21,6 +21,7 @@ router.patch('/os/:id/status', permitir('OS_EXECUTAR'), validarStatusOs, OsContr
 router.post('/os/:id/eventos', permitir('OS_EXECUTAR'), validarEventoOs, OsController.registrarEvento);
 router.post('/os/:id/retorno', permitir('OS_EXECUTAR'), OsController.criarRetorno);
 router.patch('/os/:id/reagendar', permitir('OS_REAGENDAR'), validarReagendamento, OsController.reagendar);
+router.patch('/os/:id/agendar', permitir('OS_EXECUTAR'), OsController.agendarVisita);
 router.post('/os/fotos', permitir('OS_EXECUTAR'), upload.single('imagem'), FotoController.upload);
 router.delete('/os/fotos/:id', permitir('OS_EXECUTAR'), FotoController.remover);
 

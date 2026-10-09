@@ -20,17 +20,20 @@ export default function MapaAtendimento({ route }) {
   useEffect(() => {
     (async () => {
       try {
+        const permissao = await Location.requestForegroundPermissionsAsync();
+        const servicoAtivo = permissao.status === 'granted' ? await Location.hasServicesEnabledAsync() : false;
         let ponto = Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude))
           ? { latitude: Number(latitude), longitude: Number(longitude), endereco }
           : null;
         if (!ponto && endereco) {
+          if(permissao.status!=='granted')throw new Error('Autorize a localização para converter o endereço em coordenadas.');
+          if(!servicoAtivo)throw new Error('Ative a localização (GPS) do celular para exibir este endereço no mapa.');
           const encontrados = await Location.geocodeAsync(endereco);
           if (encontrados[0]) ponto = { latitude: encontrados[0].latitude, longitude: encontrados[0].longitude, endereco };
         }
         if (!ponto) throw new Error('Não foi possível localizar o endereço cadastrado.');
         setDestino(ponto);
-        const permissao = await Location.requestForegroundPermissionsAsync();
-        if (permissao.status === 'granted') {
+        if (permissao.status === 'granted' && servicoAtivo) {
           const posicao = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setAtual({ latitude: posicao.coords.latitude, longitude: posicao.coords.longitude });
         }
@@ -38,7 +41,7 @@ export default function MapaAtendimento({ route }) {
     })();
   }, [endereco, latitude, longitude]);
 
-  const navegar = () => {
+  const abrirNavegacao = () => {
     if (!destino) return;
     const url = Platform.select({
       ios: `http://maps.apple.com/?daddr=${destino.latitude},${destino.longitude}`,
@@ -46,6 +49,7 @@ export default function MapaAtendimento({ route }) {
     });
     Linking.openURL(url).catch(() => Alert.alert('Mapa', 'Não foi possível abrir o aplicativo de navegação.'));
   };
+  const navegar=()=>Alert.alert('Abrir navegação externa','O Google Maps será aberto e o ClimaSaaS ficará em segundo plano. Deseja continuar?',[{text:'Cancelar',style:'cancel'},{text:'Abrir Google Maps',onPress:abrirNavegacao}]);
 
   if (!destino && !erro) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loading}>Localizando o atendimento...</Text></View>;
   if (erro) return <View style={styles.center}><Ionicons name="location-outline" size={48} color={colors.danger} /><Text style={styles.error}>{erro}</Text><Text style={styles.help}>Revise o endereço no cadastro do cliente.</Text></View>;
@@ -53,7 +57,7 @@ export default function MapaAtendimento({ route }) {
   return <View style={styles.container}>
     <MapaNativo destino={destino} atual={atual} style={styles.map} />
     <View style={styles.card}><View style={styles.icon}><Ionicons name="location" size={24} color="#fff" /></View><View style={{ flex: 1 }}><Text style={styles.client}>{cliente}</Text><Text style={styles.address}>{endereco}</Text>{distancia !== null && <Text style={styles.distance}>Aproximadamente {distancia < 1 ? `${Math.round(distancia * 1000)} m` : `${distancia.toFixed(1)} km`} em linha reta</Text>}</View></View>
-    <TouchableOpacity style={styles.route} onPress={navegar}><Ionicons name="navigate" size={21} color="#fff" /><Text style={styles.routeText}>Iniciar rota até o cliente</Text></TouchableOpacity>
+    <TouchableOpacity style={styles.route} onPress={navegar}><Ionicons name="navigate" size={21} color="#fff" /><Text style={styles.routeText}>Abrir rota no Google Maps</Text></TouchableOpacity>
   </View>;
 }
 

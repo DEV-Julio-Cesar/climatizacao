@@ -313,6 +313,12 @@ class OsController {
       return res.status(error.status || 500).json({ erro: error.status ? error.message : 'Falha ao reagendar.' });
     }
   }
+
+  async agendarVisita(req,res){
+    const id=Number(req.params.id),usuario=req.usuarioLogado,quando=req.body.agendado_para;
+    if(!Number.isInteger(id)||!quando||Number.isNaN(Date.parse(quando)))return res.status(400).json({erro:'Data e horário inválidos.'});
+    try{const atualizada=await db.transaction(async client=>{const os=await OsModel.buscarPorId(id,usuario.empresa_id,client);if(!os)throw Object.assign(new Error('O.S. não encontrada.'),{status:404});if(!gestor(usuario.perfil)&&os.tecnico_id!==usuario.usuario_id)throw Object.assign(new Error('Acesso negado.'),{status:403});if(['FINALIZADA','CANCELADA'].includes(os.status))throw Object.assign(new Error('Não é possível agendar uma O.S. encerrada.'),{status:409});const r=await client.query('UPDATE ordens_servico SET agendado_para=$1,updated_at=NOW() WHERE id=$2 AND empresa_id=$3 RETURNING *',[quando,id,usuario.empresa_id]);await OsModel.registrarHistorico({osId:id,statusAnterior:os.status,statusNovo:os.status,usuarioId:usuario.usuario_id,observacao:`Visita agendada para ${quando}`},client);return r.rows[0]});void PushService.enviar(atualizada.tecnico_id,'Visita agendada',`A O.S. #${id} foi agendada.`,{os_id:id});return res.json({mensagem:'Visita agendada.',os:atualizada})}catch(e){return res.status(e.status||500).json({erro:e.status?e.message:'Falha ao agendar visita.'})}
+  }
 }
 
 module.exports = new OsController();
