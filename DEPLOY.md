@@ -13,7 +13,14 @@ O arquivo `render.yaml` cria o serviço gratuito `climasaas-api`. No painel do R
 
 ## Aplicativo Android
 
-Na pasta `mobile`, crie `.env.production` com `EXPO_PUBLIC_API_URL=https://...`.
+Na pasta `mobile`, use o arquivo `.env` (ignorado pelo Git) com:
+
+```env
+EXPO_PUBLIC_API_URL=https://climasaas-api.onrender.com
+GOOGLE_MAPS_API_KEY=COLE_SUA_CHAVE_AQUI
+```
+
+Antes do build EAS, cadastre `GOOGLE_MAPS_API_KEY` nos ambientes `preview` e `production` com visibilidade `sensitive`.
 
 ```powershell
 npm install
