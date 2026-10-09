@@ -155,10 +155,13 @@ class OsModel {
 
   async listarTodas(empresaId) {
     const result = await db.query(
-      `SELECT os.*, c.nome AS cliente_nome, u.nome AS tecnico_nome
+      `SELECT os.*,c.nome AS cliente_nome,c.telefone AS cliente_telefone,c.endereco AS cliente_endereco,
+              c.cidade AS cliente_cidade,c.estado AS cliente_estado,u.nome AS tecnico_nome,
+              a.marca AS aparelho_marca,a.modelo AS aparelho_modelo,a.capacidade AS aparelho_capacidade
        FROM ordens_servico os
        JOIN clientes c ON c.id = os.cliente_id
        JOIN usuarios u ON u.id = os.tecnico_id
+       LEFT JOIN aparelhos a ON a.id=os.aparelho_id
        WHERE os.empresa_id = $1 AND os.deleted_at IS NULL
        ORDER BY os.agendado_para NULLS LAST, os.created_at DESC`,
       [empresaId]

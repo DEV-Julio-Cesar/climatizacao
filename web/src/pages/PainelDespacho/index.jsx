@@ -1,111 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, momentLocalizer } from 'react-big-calendar';
-import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
-import moment from 'moment';
-import 'moment/locale/pt-br';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
-import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
+import React,{useCallback,useEffect,useMemo,useState}from'react';
+import{Calendar,momentLocalizer}from'react-big-calendar';
+import withDragAndDrop from'react-big-calendar/lib/addons/dragAndDrop';
+import moment from'moment';
+import'moment/locale/pt-br';
+import'react-big-calendar/lib/css/react-big-calendar.css';
+import'react-big-calendar/lib/addons/dragAndDrop/styles.css';
+import'../../dispatch.css';
+import{api}from'../../services/api';
 
-import { api } from '../../services/api'; // Sua configuração do Axios
+moment.locale('pt-br');const localizer=momentLocalizer(moment),Agenda=withDragAndDrop(Calendar);
+const TIPOS=['LIMPEZA','INSTALACAO','REMOCAO','PREVENTIVA','PROBLEMA_TECNICO'];
+const vazio={cliente_id:'',aparelho_id:'',tecnico_id:'',tipo_servico:'',descricao_problema:'',data:'',hora:''};
+const cores={ABERTA:'#087ea4',EM_ANDAMENTO:'#e69024',FINALIZADA:'#159a72',CANCELADA:'#d9534f'};
 
-moment.locale('pt-br');
-const localizer = momentLocalizer(moment);
-const DragAndDropCalendar = withDragAndDrop(Calendar);
-
-export default function PainelDespacho() {
-  const [eventos, setEventos] = useState([]);
-  const [tecnicos, setTecnicos] = useState([]);
-
-  useEffect(() => {
-    carregarDados();
-  }, []);
-
-  const carregarDados = async () => {
-    try {
-      // 1. Busca a lista de técnicos ativos da empresa
-      const resTecnicos = await api.get('/tecnicos');
-      
-      // 2. Busca todas as O.S. agendadas para formatar no padrão do Calendário
-      const resOs = await api.get('/os/todas');
-      
-      const osFormatadas = resOs.data.filter(os => os.agendado_para).map(os => ({
-        id: os.id,
-        title: `O.S. #${os.id} - ${os.cliente_nome} (${os.tipo_servico})`,
-        start: new Date(os.agendado_para),
-        end: moment(os.agendado_para).add(2, 'hours').toDate(), // Estimativa de 2h por serviço
-        resourceId: os.tecnico_id, // Vincula a O.S. à coluna do técnico
-        status: os.status
-      }));
-
-      setTecnicos(resTecnicos.data);
-      setEventos(osFormatadas);
-    } catch (error) {
-      console.error('Falha ao carregar painel', error);
-    }
-  };
-
-  // 3. A Função Mágica: Ocorre quando o gestor solta o bloco em outro lugar
-  const onEventDrop = async ({ event, start, end, resourceId }) => {
-    const tecnicoDestino = resourceId;
-    const novoHorario = start;
-
-    try {
-      // A. Atualiza o banco de dados via API (Node.js)
-      await api.patch(`/os/${event.id}/reagendar`, {
-        tecnico_id: tecnicoDestino,
-        agendado_para: novoHorario
-      });
-
-      // B. Atualiza a interface instantaneamente (Optimistic UI Update)
-      const eventosAtualizados = eventos.map(ev => 
-        ev.id === event.id 
-          ? { ...ev, start, end, resourceId: tecnicoDestino } 
-          : ev
-      );
-      setEventos(eventosAtualizados);
-
-      // (Futuro: Disparar notificação push para o app mobile do técnico avisando da nova O.S.)
-    } catch (error) {
-      alert('Erro ao reagendar O.S. Verifique a conexão.');
-    }
-  };
-
-  // 4. Customização visual: Cores diferentes baseadas no status
-  const eventStyleGetter = (event) => {
-    let backgroundColor = '#3174ad'; // Azul Padrão (Agendada)
-    if (event.status === 'EM_ANDAMENTO') backgroundColor = '#f0ad4e'; // Amarelo
-    if (event.status === 'FINALIZADA') backgroundColor = '#5cb85c'; // Verde
-
-    return { style: { backgroundColor, borderRadius: '5px', color: '#fff', border: 'none' } };
-  };
-
-  return (
-    <div style={{ height: '90vh', padding: '20px' }}>
-      <h2>Painel de Despacho (Controle de Frota)</h2>
-      
-      <DragAndDropCalendar
-        localizer={localizer}
-        events={eventos}
-        onEventDrop={onEventDrop}
-        resizable={false}
-        defaultView="day"
-        views={['day', 'week', 'month']}
-        step={30}
-        timeslots={2}
-        min={new Date(2026, 0, 1, 7, 0)} // Começa o dia às 07:00
-        max={new Date(2026, 0, 1, 19, 0)} // Termina às 19:00
-        
-        // A Mágica do "Multi-Técnico": Cria colunas, uma para cada técnico
-        resources={tecnicos}
-        resourceIdAccessor="id"
-        resourceTitleAccessor="nome"
-        
-        eventPropGetter={eventStyleGetter}
-        messages={{
-          today: 'Hoje', previous: 'Voltar', next: 'Avançar',
-          month: 'Mês', week: 'Semana', day: 'Dia',
-        }}
-      />
-    </div>
-  );
+export default function PainelDespacho(){
+ const[ordens,setOrdens]=useState([]),[tecnicos,setTecnicos]=useState([]),[clientes,setClientes]=useState([]),[modal,setModal]=useState(false),[selecionada,setSelecionada]=useState(null),[form,setForm]=useState(vazio),[busca,setBusca]=useState(''),[status,setStatus]=useState('ATIVAS'),[loading,setLoading]=useState(true),[salvando,setSalvando]=useState(false),[erro,setErro]=useState('');
+ const carregar=useCallback(async()=>{setLoading(true);setErro('');try{const[t,o,c]=await Promise.all([api.get('/tecnicos'),api.get('/os/todas'),api.get('/clientes')]);setTecnicos(t.data);setOrdens(o.data);setClientes(c.data)}catch(e){setErro(e.response?.data?.erro||'Não foi possível carregar a agenda.')}finally{setLoading(false)}},[]);useEffect(()=>{carregar()},[carregar]);
+ const eventos=useMemo(()=>ordens.filter(o=>o.agendado_para).filter(o=>status==='TODAS'||(status==='ATIVAS'?!['FINALIZADA','CANCELADA'].includes(o.status):o.status===status)).filter(o=>`${o.id} ${o.cliente_nome} ${o.tecnico_nome} ${o.tipo_servico}`.toLowerCase().includes(busca.toLowerCase())).map(o=>({id:o.id,title:`#${o.id} · ${o.cliente_nome} · ${rotulo(o.tipo_servico)}`,start:new Date(o.agendado_para),end:moment(o.agendado_para).add(2,'hours').toDate(),resourceId:o.tecnico_id,status:o.status,os:o})),[ordens,status,busca]);
+ const cliente=clientes.find(c=>String(c.id)===String(form.cliente_id)),aparelhos=cliente?.aparelhos||[];
+ const atualizarForm=(campo,valor)=>setForm(f=>({...f,[campo]:valor,...(campo==='cliente_id'?{aparelho_id:''}:{})}));
+ const criar=async e=>{e.preventDefault();if(!form.cliente_id||!form.tecnico_id||!form.tipo_servico||form.descricao_problema.trim().length<5||!form.data||!form.hora)return setErro('Preencha cliente, técnico, serviço, descrição, data e horário.');setSalvando(true);setErro('');try{await api.post('/os',{cliente_id:Number(form.cliente_id),aparelho_id:form.aparelho_id?Number(form.aparelho_id):null,tecnico_id:Number(form.tecnico_id),tipo_servico:form.tipo_servico,descricao_problema:form.descricao_problema.trim(),agendado_para:new Date(`${form.data}T${form.hora}:00`).toISOString()});setModal(false);setForm(vazio);await carregar()}catch(e2){setErro(e2.response?.data?.erro||'Falha ao criar agendamento.')}finally{setSalvando(false)}};
+ const reagendar=async({event,start,resourceId})=>{if(['FINALIZADA','CANCELADA'].includes(event.status))return;const tecnico=Number(resourceId||event.resourceId);setOrdens(lista=>lista.map(o=>o.id===event.id?{...o,tecnico_id:tecnico,agendado_para:start.toISOString(),tecnico_nome:tecnicos.find(t=>t.id===tecnico)?.nome||o.tecnico_nome}:o));try{await api.patch(`/os/${event.id}/reagendar`,{tecnico_id:tecnico,agendado_para:start.toISOString()})}catch(e){setErro(e.response?.data?.erro||'Não foi possível reagendar.');await carregar()}};
+ const salvarAgendamento=async()=>{const d=document.getElementById('detail-date')?.value,h=document.getElementById('detail-time')?.value,t=Number(document.getElementById('detail-tech')?.value);if(!d||!h||!t)return;try{await api.patch(`/os/${selecionada.id}/reagendar`,{tecnico_id:t,agendado_para:new Date(`${d}T${h}:00`).toISOString()});setSelecionada(null);await carregar()}catch(e){setErro(e.response?.data?.erro||'Falha ao alterar agendamento.')}};
+ const abrirHorario=slot=>{const d=moment(slot.start);setForm({...vazio,data:d.format('YYYY-MM-DD'),hora:d.format('HH:mm'),tecnico_id:slot.resourceId||''});setModal(true)};
+ if(loading)return <div className="loading">Carregando central de agendamento...</div>;
+ return <div className="dispatch-page"><section className="dispatch-toolbar"><div><h2>Central de agendamento</h2><p>Crie, atribua e acompanhe as visitas que chegam ao aplicativo dos técnicos.</p></div><button className="primary"onClick={()=>{setForm(vazio);setModal(true)}}>+ Novo agendamento</button></section>{erro&&<div className="alert">{erro}<button onClick={()=>setErro('')}>×</button></div>}<section className="dispatch-filters"><input placeholder="Buscar cliente, técnico ou O.S..."value={busca}onChange={e=>setBusca(e.target.value)}/><select value={status}onChange={e=>setStatus(e.target.value)}><option value="ATIVAS">O.S. ativas</option><option value="ABERTA">Abertas</option><option value="EM_ANDAMENTO">Em atendimento</option><option value="FINALIZADA">Finalizadas</option><option value="CANCELADA">Canceladas</option><option value="TODAS">Todas</option></select><button onClick={carregar}>Atualizar</button></section><section className="dispatch-summary"><Summary label="Abertas"value={ordens.filter(o=>o.status==='ABERTA').length}/><Summary label="Em atendimento"value={ordens.filter(o=>o.status==='EM_ANDAMENTO').length}/><Summary label="Sem agendamento"value={ordens.filter(o=>!o.agendado_para&&!['FINALIZADA','CANCELADA'].includes(o.status)).length}/><Summary label="Técnicos disponíveis"value={tecnicos.length}/></section><section className="calendar-panel"><Agenda localizer={localizer}culture="pt-BR"events={eventos}resources={tecnicos}resourceIdAccessor="id"resourceTitleAccessor="nome"startAccessor="start"endAccessor="end"defaultView="week"views={['day','week','month','agenda']}step={30}timeslots={2}selectable onSelectSlot={abrirHorario}onSelectEvent={e=>setSelecionada(e.os)}onEventDrop={reagendar}draggableAccessor={e=>!['FINALIZADA','CANCELADA'].includes(e.status)}resizable={false}min={new Date(1970,0,1,7)}max={new Date(1970,0,1,20)}eventPropGetter={e=>({style:{backgroundColor:cores[e.status],border:0,borderRadius:7}})}messages={{today:'Hoje',previous:'Anterior',next:'Próximo',month:'Mês',week:'Semana',day:'Dia',agenda:'Lista',date:'Data',time:'Horário',event:'Atendimento',noEventsInRange:'Nenhum atendimento neste período.',showMore:n=>`+ ${n} atendimento(s)`}}/></section>
+ {modal&&<div className="modal-backdrop"onMouseDown={e=>e.target===e.currentTarget&&setModal(false)}><form className="schedule-modal"onSubmit={criar}><div className="modal-title"><div><h2>Novo agendamento</h2><p>A O.S. aparecerá imediatamente na agenda do técnico.</p></div><button type="button"onClick={()=>setModal(false)}>×</button></div><label>Cliente *</label><select value={form.cliente_id}onChange={e=>atualizarForm('cliente_id',e.target.value)}><option value="">Selecione...</option>{clientes.map(c=><option key={c.id}value={c.id}>{c.nome}</option>)}</select><div className="form-grid"><div><label>Equipamento</label><select value={form.aparelho_id}onChange={e=>atualizarForm('aparelho_id',e.target.value)}disabled={!cliente}><option value="">Não vincular</option>{aparelhos.map(a=><option key={a.id}value={a.id}>{[a.marca,a.modelo,a.capacidade,a.ambiente].filter(Boolean).join(' · ')}</option>)}</select></div><div><label>Técnico *</label><select value={form.tecnico_id}onChange={e=>atualizarForm('tecnico_id',e.target.value)}><option value="">Selecione...</option>{tecnicos.map(t=><option key={t.id}value={t.id}>{t.nome}</option>)}</select></div><div><label>Data *</label><input type="date"value={form.data}onChange={e=>atualizarForm('data',e.target.value)}/></div><div><label>Horário *</label><input type="time"value={form.hora}onChange={e=>atualizarForm('hora',e.target.value)}/></div></div><label>Tipo de serviço *</label><select value={form.tipo_servico}onChange={e=>atualizarForm('tipo_servico',e.target.value)}><option value="">Selecione...</option>{TIPOS.map(t=><option key={t}value={t}>{rotulo(t)}</option>)}</select><label>Descrição do chamado *</label><textarea value={form.descricao_problema}onChange={e=>atualizarForm('descricao_problema',e.target.value)}placeholder="Descreva o problema informado pelo cliente..."maxLength={1000}/><div className="modal-actions"><button type="button"onClick={()=>setModal(false)}>Cancelar</button><button className="primary"disabled={salvando}>{salvando?'Salvando...':'Criar e agendar O.S.'}</button></div></form></div>}
+ {selecionada&&<div className="modal-backdrop"onMouseDown={e=>e.target===e.currentTarget&&setSelecionada(null)}><section className="detail-drawer"><div className="modal-title"><div><span className="status-pill"style={{background:cores[selecionada.status]}}>{rotulo(selecionada.status)}</span><h2>O.S. #{selecionada.id}</h2></div><button onClick={()=>setSelecionada(null)}>×</button></div><h3>{selecionada.cliente_nome}</h3><p>{selecionada.descricao_problema}</p><div className="detail-list"><b>Técnico</b><span>{selecionada.tecnico_nome}</span><b>Serviço</b><span>{rotulo(selecionada.tipo_servico)}</span><b>Agendamento</b><span>{selecionada.agendado_para?new Date(selecionada.agendado_para).toLocaleString('pt-BR'):'Não agendado'}</span></div>{!['FINALIZADA','CANCELADA'].includes(selecionada.status)&&<><h3>Alterar visita</h3><select id="detail-tech"defaultValue={selecionada.tecnico_id}>{tecnicos.map(t=><option key={t.id}value={t.id}>{t.nome}</option>)}</select><div className="form-grid"><input id="detail-date"type="date"defaultValue={moment(selecionada.agendado_para).format('YYYY-MM-DD')}/><input id="detail-time"type="time"defaultValue={moment(selecionada.agendado_para).format('HH:mm')}/></div><button className="primary wide"onClick={salvarAgendamento}>Salvar alteração</button></>}<div className="support-actions"><a href={`tel:${selecionada.cliente_telefone||''}`}>Ligar para cliente</a><a target="_blank"rel="noreferrer"href={`https://wa.me/${String(selecionada.cliente_telefone||'').replace(/\D/g,'')}`}>Abrir WhatsApp</a></div></section></div>}
+ </div>
 }
+const Summary=({label,value})=><div><strong>{value}</strong><span>{label}</span></div>;
+const rotulo=v=>String(v||'').replaceAll('_',' ').toLowerCase().replace(/(^|\s)\S/g,l=>l.toUpperCase());

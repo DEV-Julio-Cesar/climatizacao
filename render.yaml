@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: ohio
-    buildCommand: npm ci
+    buildCommand: npm ci && npm --prefix web ci && npm --prefix web run build
     startCommand: npm run migrate && npm start
     healthCheckPath: /health
     envVars:
