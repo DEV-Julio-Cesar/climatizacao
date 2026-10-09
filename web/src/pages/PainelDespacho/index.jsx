@@ -1,14 +1,12 @@
 import React,{useCallback,useEffect,useMemo,useState}from'react';
 import{Calendar,momentLocalizer}from'react-big-calendar';
-import withDragAndDrop from'react-big-calendar/lib/addons/dragAndDrop';
 import moment from'moment';
 import'moment/locale/pt-br';
 import'react-big-calendar/lib/css/react-big-calendar.css';
-import'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 import'../../dispatch.css';
 import{api}from'../../services/api';
 
-moment.locale('pt-br');const localizer=momentLocalizer(moment),Agenda=withDragAndDrop(Calendar);
+moment.locale('pt-br');const localizer=momentLocalizer(moment),Agenda=Calendar;
 const TIPOS=['LIMPEZA','INSTALACAO','REMOCAO','PREVENTIVA','PROBLEMA_TECNICO'];
 const vazio={cliente_id:'',aparelho_id:'',tecnico_id:'',tipo_servico:'',descricao_problema:'',data:'',hora:''};
 const cores={ABERTA:'#087ea4',EM_ANDAMENTO:'#e69024',FINALIZADA:'#159a72',CANCELADA:'#d9534f'};
