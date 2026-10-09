@@ -153,6 +153,23 @@ test('robô identifica cliente e encaminha novo contato', () => {
   assert.equal(novo.proximaEtapa, 'NOVO_CONTATO');
 });
 
+test('atendente assume conversa de forma vinculada ao próprio usuário', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql, params) => {
+    assert.match(sql, /atendente_id=\$1/);
+    assert.deepEqual(params, [2, '15', 3]);
+    return { rows: [{ id: 15, fila_status: 'ATENDENDO', atendente_id: 2, bot_ativo: false }] };
+  };
+  try {
+    const result = await request(server, '/atendimento/whatsapp/conversas/15/assumir', {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.atendente_id, 2);
+    assert.equal(result.body.bot_ativo, false);
+  } finally { db.query = originalQuery; }
+});
+
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {
   const originalQuery = db.query;
   db.query = async (sql, params) => {

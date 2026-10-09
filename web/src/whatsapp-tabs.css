@@ -29,3 +29,16 @@
   height: 18px;
 }
 .wa-tabs button.active b { background: var(--primary); color: #fff; }
+.wa-claim {
+  margin-left: auto;
+  border: 0;
+  background: #159a72;
+  color: #fff;
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.wa-claim:disabled { opacity: .6; }
+.wa-claim + .wa-window { margin-left: 0; }
+@media(max-width:760px) { .wa-claim { margin-left: auto; font-size: 11px; padding: 8px; } }

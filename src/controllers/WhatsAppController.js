@@ -85,9 +85,11 @@ class WhatsAppController {
   async listarConversas(req, res) {
     try {
       const result = await db.query(
-        `SELECT w.*,c.nome AS cliente_nome FROM whatsapp_conversas w LEFT JOIN clientes c ON c.id=w.cliente_id
-         WHERE w.empresa_id=$1 ORDER BY w.ultima_mensagem_em DESC NULLS LAST,w.updated_at DESC LIMIT 300`,
-        [req.usuarioLogado.empresa_id]
+        `SELECT w.*,c.nome AS cliente_nome,u.nome AS atendente_nome FROM whatsapp_conversas w
+         LEFT JOIN clientes c ON c.id=w.cliente_id LEFT JOIN usuarios u ON u.id=w.atendente_id
+         WHERE w.empresa_id=$1 AND (w.fila_status<>'ATENDENDO' OR w.atendente_id=$2)
+         ORDER BY w.ultima_mensagem_em DESC NULLS LAST,w.updated_at DESC LIMIT 300`,
+        [req.usuarioLogado.empresa_id, req.usuarioLogado.usuario_id]
       );
       return res.json(result.rows);
     } catch (error) { return res.status(500).json({ erro: 'Falha ao carregar conversas.' }); }
@@ -97,6 +99,7 @@ class WhatsAppController {
     try {
       const conversa = await db.query('SELECT * FROM whatsapp_conversas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.usuarioLogado.empresa_id]);
       if (!conversa.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
+      if (conversa.rows[0].fila_status === 'ATENDENDO' && conversa.rows[0].atendente_id !== req.usuarioLogado.usuario_id) return res.status(403).json({ erro: 'Esta conversa está com outro atendente.' });
       const mensagens = await db.query('SELECT * FROM whatsapp_mensagens WHERE conversa_id=$1 ORDER BY ocorrida_em,id LIMIT 500', [req.params.id]);
       await db.query('UPDATE whatsapp_conversas SET nao_lidas=0 WHERE id=$1', [req.params.id]);
       return res.json({ conversa: conversa.rows[0], mensagens: mensagens.rows });
@@ -109,15 +112,21 @@ class WhatsAppController {
     try {
       const conversa = await db.query('SELECT * FROM whatsapp_conversas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.usuarioLogado.empresa_id]);
       if (!conversa.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
-      if (!conversa.rows[0].janela_atendimento_ate || new Date(conversa.rows[0].janela_atendimento_ate) < new Date()) return res.status(409).json({ erro: 'A janela de 24 horas terminou. Envie um template aprovado pela Meta para reiniciar o atendimento.' });
-      const retorno = await WhatsAppService.enviarMensagem(conversa.rows[0].telefone, texto);
+      const posse = await db.query(
+        `UPDATE whatsapp_conversas SET fila_status='ATENDENDO',atendente_id=$1,bot_ativo=FALSE,updated_at=NOW()
+         WHERE id=$2 AND empresa_id=$3 AND (fila_status<>'ATENDENDO' OR atendente_id=$1) RETURNING *`,
+        [req.usuarioLogado.usuario_id, req.params.id, req.usuarioLogado.empresa_id]
+      );
+      if (!posse.rows[0]) return res.status(409).json({ erro: 'Esta conversa já foi assumida por outro atendente.' });
+      if (!posse.rows[0].janela_atendimento_ate || new Date(posse.rows[0].janela_atendimento_ate) < new Date()) return res.status(409).json({ erro: 'A janela de 24 horas terminou. Envie um template aprovado pela Meta para reiniciar o atendimento.' });
+      const retorno = await WhatsAppService.enviarMensagem(posse.rows[0].telefone, texto);
       const whatsappId = retorno?.messages?.[0]?.id || null;
       const mensagem = await db.query(
         `INSERT INTO whatsapp_mensagens(conversa_id,whatsapp_id,direcao,tipo,conteudo,status,enviado_por)
          VALUES($1,$2,'SAIDA','text',$3,'enviada',$4) RETURNING *`,
         [req.params.id, whatsappId, texto, req.usuarioLogado.usuario_id]
       );
-      await db.query("UPDATE whatsapp_conversas SET fila_status='ATENDENDO',bot_ativo=FALSE,ultima_mensagem=$1,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$2", [texto, req.params.id]);
+      await db.query("UPDATE whatsapp_conversas SET fila_status='ATENDENDO',atendente_id=$1,bot_ativo=FALSE,ultima_mensagem=$2,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$3", [req.usuarioLogado.usuario_id, texto, req.params.id]);
       return res.status(201).json(mensagem.rows[0]);
     } catch (error) { return res.status(502).json({ erro: error.message || 'Falha ao enviar mensagem pelo WhatsApp.' }); }
   }
@@ -134,6 +143,18 @@ class WhatsAppController {
       if (!result.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
       return res.json(result.rows[0]);
     } catch (error) { return res.status(500).json({ erro: 'Falha ao mover conversa.' }); }
+  }
+
+  async assumir(req, res) {
+    try {
+      const result = await db.query(
+        `UPDATE whatsapp_conversas SET fila_status='ATENDENDO',atendente_id=$1,bot_ativo=FALSE,updated_at=NOW()
+         WHERE id=$2 AND empresa_id=$3 AND (atendente_id IS NULL OR atendente_id=$1) RETURNING *`,
+        [req.usuarioLogado.usuario_id, req.params.id, req.usuarioLogado.empresa_id]
+      );
+      if (!result.rows[0]) return res.status(409).json({ erro: 'Esta conversa já foi assumida por outro atendente.' });
+      return res.json(result.rows[0]);
+    } catch (error) { return res.status(500).json({ erro: 'Falha ao assumir atendimento.' }); }
   }
 }
 module.exports = new WhatsAppController();

@@ -372,6 +372,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversas (
   bot_etapa VARCHAR(40) NOT NULL DEFAULT 'INICIO',
   bot_ativo BOOLEAN NOT NULL DEFAULT TRUE,
   fila_status VARCHAR(20) NOT NULL DEFAULT 'AUTOMACAO' CHECK(fila_status IN ('ATENDENDO','ESPERA','AUTOMACAO')),
+  atendente_id INTEGER REFERENCES usuarios(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(empresa_id, telefone)
@@ -393,3 +394,5 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_mensagens_conversa ON whatsapp_mensagens
 ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS bot_etapa VARCHAR(40) NOT NULL DEFAULT 'INICIO';
 ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS bot_ativo BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS fila_status VARCHAR(20) NOT NULL DEFAULT 'AUTOMACAO';
+ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS atendente_id INTEGER REFERENCES usuarios(id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_conversas_atendente ON whatsapp_conversas(empresa_id,atendente_id,fila_status);
