@@ -1,5 +1,22 @@
-import React,{useEffect,useState}from'react';
-import{api}from'../services/api';
-export default function Dashboard(){const[d,setD]=useState(null),[erro,setErro]=useState('');useEffect(()=>{api.get('/relatorios/gerencial').then(r=>setD(r.data)).catch(e=>setErro(e.response?.data?.erro||e.message))},[]);if(erro)return <div className="empty">{erro}</div>;if(!d)return <div className="loading">Carregando indicadores...</div>;return <><section className="metrics"><Card t="Ordens (90 dias)"v={d.total}/><Card t="Finalizadas"v={d.finalizadas}/><Card t="Em atendimento"v={d.em_andamento}/><Card t="Atrasadas"v={d.atrasadas}/><Card t="Pausadas"v={d.pausadas}/><Card t="Retornos"v={d.retornos}/><Card t="Primeira resolução"v={`${d.primeira_resolucao_pct||0}%`}/><Card t="Faturado"v={money(d.faturado)}/><Card t="Recebido"v={money(d.recebido)}/><Card t="Contratos ativos"v={d.contratos?.ativos}/><Card t="Tempo médio efetivo"v={`${d.tempo_medio_horas||0}h`}/></section><section className="panel"><h2>Desempenho da equipe</h2><table><thead><tr><th>Técnico</th><th>Atendimentos</th><th>Finalizadas</th><th>Conversão</th></tr></thead><tbody>{d.tecnicos?.map(t=><tr key={t.nome}><td>{t.nome}</td><td>{t.atendimentos}</td><td>{t.finalizadas}</td><td>{t.atendimentos?Math.round(100*t.finalizadas/t.atendimentos):0}%</td></tr>)}</tbody></table></section><section className="panel"><h2>Demanda por serviço</h2>{d.servicos?.map(s=><div className="line"key={s.tipo_servico}><span>{s.tipo_servico.replaceAll('_',' ')}</span><b>{s.total} · {money(s.valor)}</b></div>)}</section></>};
-const Card=({t,v})=><div className="metric"><small>{t}</small><strong>{v??0}</strong></div>;
-const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+import React, { useEffect, useState } from 'react';
+import { api } from '../services/api';
+
+const money = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const Card = ({ title, value }) => <article className="metric"><small>{title}</small><strong>{value ?? 0}</strong></article>;
+
+export default function Dashboard() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { api.get('/relatorios/gerencial').then((response) => setData(response.data)).catch((err) => setError(err.response?.data?.erro || err.message)); }, []);
+  if (error) return <div className="empty">{error}</div>;
+  if (!data) return <div className="loading">Carregando indicadores...</div>;
+  return <>
+    <section className="metrics">
+      <Card title="Ordens (90 dias)" value={data.total}/><Card title="Finalizadas" value={data.finalizadas}/><Card title="Em atendimento" value={data.em_andamento}/><Card title="Atrasadas" value={data.atrasadas}/><Card title="Pausadas" value={data.pausadas}/><Card title="Retornos" value={data.retornos}/><Card title="Primeira resolução" value={`${data.primeira_resolucao_pct || 0}%`}/><Card title="Faturado" value={money(data.faturado)}/><Card title="Recebido" value={money(data.recebido)}/><Card title="Contratos ativos" value={data.contratos?.ativos}/><Card title="Tempo médio efetivo" value={`${data.tempo_medio_horas || 0}h`}/>
+    </section>
+    <div className="grid2">
+      <section className="panel"><h2>Desempenho da equipe</h2><table><thead><tr><th>Técnico</th><th>Atendimentos</th><th>Finalizadas</th><th>Conversão</th></tr></thead><tbody>{data.tecnicos?.map((item) => <tr key={item.nome}><td>{item.nome}</td><td>{item.atendimentos}</td><td>{item.finalizadas}</td><td>{item.atendimentos ? Math.round(100 * item.finalizadas / item.atendimentos) : 0}%</td></tr>)}</tbody></table></section>
+      <section className="panel"><h2>Demanda por serviço</h2>{data.servicos?.map((item) => <div className="line" key={item.tipo_servico}><span>{item.tipo_servico.replaceAll('_', ' ')}</span><b>{item.total} · {money(item.valor)}</b></div>)}</section>
+    </div>
+  </>;
+}
