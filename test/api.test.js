@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const createApp = require('../src/app');
 const db = require('../src/config/database');
 const OsModel = require('../src/models/OsModel');
+const WhatsAppBotService = require('../src/services/WhatsAppBotService');
 
 async function request(server, pathname, options = {}) {
   const address = server.address();
@@ -134,6 +135,22 @@ test('Meta consegue validar o webhook do WhatsApp', async () => {
 test('conversas do WhatsApp exigem autenticação', async () => {
   const result = await request(server, '/atendimento/whatsapp/conversas');
   assert.equal(result.status, 401);
+});
+
+test('robô do WhatsApp apresenta as duas opções no primeiro contato', () => {
+  const resposta = WhatsAppBotService.decidir('INICIO', 'Olá');
+  assert.match(resposta.texto, /1 - Já sou cliente/);
+  assert.match(resposta.texto, /2 - Ainda não sou cliente/);
+  assert.equal(resposta.proximaEtapa, 'AGUARDANDO_TIPO');
+});
+
+test('robô identifica cliente e encaminha novo contato', () => {
+  const cliente = WhatsAppBotService.decidir('AGUARDANDO_TIPO', '1', 'Maria');
+  assert.match(cliente.texto, /Maria/);
+  assert.equal(cliente.proximaEtapa, 'ATENDIMENTO_CLIENTE');
+  const novo = WhatsAppBotService.decidir('AGUARDANDO_TIPO', '2');
+  assert.match(novo.texto, /Informe seu nome/);
+  assert.equal(novo.proximaEtapa, 'NOVO_CONTATO');
 });
 
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {

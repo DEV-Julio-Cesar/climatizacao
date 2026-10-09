@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../config/database');
 const WhatsAppService = require('../services/WhatsAppService');
+const WhatsAppBotService = require('../services/WhatsAppBotService');
 
 const normalizar = (valor) => String(valor || '').replace(/\D/g, '');
 
@@ -15,6 +16,24 @@ async function identificarEmpresa(telefone) {
   if (process.env.WHATSAPP_EMPRESA_ID) return { empresa_id: Number(process.env.WHATSAPP_EMPRESA_ID) };
   const unica = await db.query('SELECT id AS empresa_id FROM empresas WHERE ativo=TRUE AND deleted_at IS NULL ORDER BY id LIMIT 2');
   return unica.rows.length === 1 ? unica.rows[0] : null;
+}
+
+async function responderComBot(conversa, mensagemRecebida, clienteNome) {
+  if (!conversa.bot_ativo) return;
+  const resposta = WhatsAppBotService.decidir(conversa.bot_etapa, mensagemRecebida, clienteNome);
+  if (!resposta) return;
+  try {
+    const retorno = await WhatsAppService.enviarMensagem(conversa.telefone, resposta.texto);
+    await db.query(
+      `INSERT INTO whatsapp_mensagens(conversa_id,whatsapp_id,direcao,tipo,conteudo,status)
+       VALUES($1,$2,'SAIDA','text',$3,'enviada') ON CONFLICT(whatsapp_id) DO NOTHING`,
+      [conversa.id, retorno?.messages?.[0]?.id || null, resposta.texto]
+    );
+    await db.query(
+      'UPDATE whatsapp_conversas SET bot_etapa=$1,ultima_mensagem=$2,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$3',
+      [resposta.proximaEtapa, resposta.texto, conversa.id]
+    );
+  } catch (error) { console.error('Falha na resposta automática do WhatsApp:', error.message); }
 }
 
 class WhatsAppController {
@@ -49,14 +68,15 @@ class WhatsAppController {
           const conversa = await db.query(
             `INSERT INTO whatsapp_conversas(empresa_id,cliente_id,telefone,nome_contato,ultima_mensagem,ultima_mensagem_em,nao_lidas,janela_atendimento_ate)
              VALUES($1,$2,$3,$4,$5,$6,1,$6::timestamptz+INTERVAL '24 hours')
-             ON CONFLICT(empresa_id,telefone) DO UPDATE SET cliente_id=COALESCE(EXCLUDED.cliente_id,whatsapp_conversas.cliente_id),nome_contato=COALESCE(EXCLUDED.nome_contato,whatsapp_conversas.nome_contato),ultima_mensagem=EXCLUDED.ultima_mensagem,ultima_mensagem_em=EXCLUDED.ultima_mensagem_em,nao_lidas=whatsapp_conversas.nao_lidas+1,janela_atendimento_ate=EXCLUDED.janela_atendimento_ate,updated_at=NOW() RETURNING id`,
+             ON CONFLICT(empresa_id,telefone) DO UPDATE SET cliente_id=COALESCE(EXCLUDED.cliente_id,whatsapp_conversas.cliente_id),nome_contato=COALESCE(EXCLUDED.nome_contato,whatsapp_conversas.nome_contato),ultima_mensagem=EXCLUDED.ultima_mensagem,ultima_mensagem_em=EXCLUDED.ultima_mensagem_em,nao_lidas=whatsapp_conversas.nao_lidas+1,janela_atendimento_ate=EXCLUDED.janela_atendimento_ate,updated_at=NOW() RETURNING *`,
             [vinculo.empresa_id, vinculo.cliente_id || null, telefone, contato?.profile?.name || vinculo.nome || null, conteudo, data]
           );
-          await db.query(
+          const inserida = await db.query(
             `INSERT INTO whatsapp_mensagens(conversa_id,whatsapp_id,direcao,tipo,conteudo,status,ocorrida_em)
-             VALUES($1,$2,'ENTRADA',$3,$4,'recebida',$5) ON CONFLICT(whatsapp_id) DO NOTHING`,
+             VALUES($1,$2,'ENTRADA',$3,$4,'recebida',$5) ON CONFLICT(whatsapp_id) DO NOTHING RETURNING id`,
             [conversa.rows[0].id, mensagem.id, mensagem.type || 'text', conteudo, data]
           );
+          if (inserida.rows[0]) await responderComBot(conversa.rows[0], conteudo, vinculo.nome);
         }
       }
     } catch (error) { console.error('Falha ao processar webhook WhatsApp:', error.message); }

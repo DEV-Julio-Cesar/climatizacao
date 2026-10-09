@@ -369,6 +369,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversas (
   ultima_mensagem_em TIMESTAMPTZ,
   nao_lidas INTEGER NOT NULL DEFAULT 0,
   janela_atendimento_ate TIMESTAMPTZ,
+  bot_etapa VARCHAR(40) NOT NULL DEFAULT 'INICIO',
+  bot_ativo BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(empresa_id, telefone)
@@ -387,3 +389,5 @@ CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
 );
 CREATE INDEX IF NOT EXISTS idx_whatsapp_conversas_empresa ON whatsapp_conversas(empresa_id,ultima_mensagem_em DESC);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_mensagens_conversa ON whatsapp_mensagens(conversa_id,ocorrida_em);
+ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS bot_etapa VARCHAR(40) NOT NULL DEFAULT 'INICIO';
+ALTER TABLE whatsapp_conversas ADD COLUMN IF NOT EXISTS bot_ativo BOOLEAN NOT NULL DEFAULT TRUE;
