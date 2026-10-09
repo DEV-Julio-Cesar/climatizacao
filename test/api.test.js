@@ -123,6 +123,20 @@ test('registro push rejeita token malformado', async () => {
   assert.equal(result.status, 400);
 });
 
+test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql, params) => {
+    assert.match(sql, /FROM usuarios/);
+    assert.deepEqual(params, [3]);
+    return { rows: [{ id: 7, nome: 'Técnico', perfil: 'TECNICO' }] };
+  };
+  try {
+    const result = await request(server, '/tecnicos', { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body[0].id, 7);
+  } finally { db.query = originalQuery; }
+});
+
 test('usuário sem permissão não altera catálogo', async () => {
   const result = await request(server, '/catalogo/produtos/1', {
     method:'PATCH', headers:{ Authorization:`Bearer ${tokenRestrito}`, 'Content-Type':'application/json' }, body:'{}',

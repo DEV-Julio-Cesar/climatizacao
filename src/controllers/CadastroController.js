@@ -2,9 +2,6 @@ const db = require('../config/database');
 
 class CadastroController {
   async listarTecnicos(req, res) {
-    if (!['GESTOR', 'ADMIN'].includes(req.usuarioLogado.perfil)) {
-      return res.status(403).json({ erro: 'Acesso restrito a gestores.' });
-    }
     try {
       const result = await db.query(
         "SELECT id, nome, perfil FROM usuarios WHERE empresa_id = $1 AND ativo = TRUE AND deleted_at IS NULL AND perfil IN ('TECNICO', 'GESTOR') ORDER BY nome",
