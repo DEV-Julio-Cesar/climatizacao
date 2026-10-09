@@ -5,6 +5,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
 const MapaEquipe = lazy(() => import('./pages/MapaEquipe'));
 const Clientes = lazy(() => import('./pages/Clientes'));
+const Catalogo = lazy(() => import('./pages/Catalogo'));
 const Operacao = lazy(() => import('./pages/Operacao'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 
@@ -13,6 +14,7 @@ const menus = [
   { id: 'despacho', label: 'Agendamentos', icon: '▣', permission: 'AGENDA_VISUALIZAR', component: PainelDespacho },
   { id: 'mapa', label: 'Mapa da equipe', icon: '⌖', permission: 'GESTAO_VISUALIZAR', component: MapaEquipe },
   { id: 'clientes', label: 'Clientes', icon: '♙', permission: 'CLIENTES_VISUALIZAR', component: Clientes },
+  { id: 'catalogo', label: 'Produtos e serviços', icon: '▤', permission: 'ESTOQUE_VISUALIZAR', component: Catalogo },
   { id: 'operacao', label: 'Operação', icon: '◇', permissions: ['ESTOQUE_VISUALIZAR', 'FINANCEIRO_VISUALIZAR', 'GESTAO_VISUALIZAR'], component: Operacao },
   { id: 'config', label: 'Configurações', icon: '⚙', permission: 'GESTAO_GERENCIAR', component: Configuracoes },
 ];

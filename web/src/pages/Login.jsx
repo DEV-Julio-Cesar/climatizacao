@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { api } from '../services/api';
 
 export default function Login({ onLogin }) {
-  const [email, setEmail] = useState('admin@climasaas.com');
-  const [senha, setSenha] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
 

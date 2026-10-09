@@ -77,6 +77,30 @@ class CadastroController {
       return res.json({...eq.rows[0],historico:hist.rows});
     } catch(e) { return res.status(500).json({erro:'Falha ao carregar equipamento.'}); }
   }
+
+  async detalheCliente(req,res) {
+    try {
+      const cliente=await db.query('SELECT * FROM clientes WHERE id=$1 AND empresa_id=$2 AND deleted_at IS NULL',[req.params.id,req.usuarioLogado.empresa_id]);
+      if(!cliente.rows[0]) return res.status(404).json({erro:'Cliente não encontrado.'});
+      const [equipamentos,ordens]=await Promise.all([
+        db.query(`SELECT *,to_char(instalado_em,'YYYY-MM-DD') instalado_em,to_char(garantia_ate,'YYYY-MM-DD') garantia_ate,to_char(proxima_manutencao,'YYYY-MM-DD') proxima_manutencao FROM aparelhos WHERE cliente_id=$1 AND empresa_id=$2 AND deleted_at IS NULL ORDER BY ambiente,marca,modelo`,[req.params.id,req.usuarioLogado.empresa_id]),
+        db.query(`SELECT os.id,os.tipo_servico,os.status,os.valor_total,os.agendado_para,os.finalizado_em,u.nome tecnico_nome,a.marca aparelho_marca,a.modelo aparelho_modelo FROM ordens_servico os JOIN usuarios u ON u.id=os.tecnico_id LEFT JOIN aparelhos a ON a.id=os.aparelho_id WHERE os.cliente_id=$1 AND os.empresa_id=$2 AND os.deleted_at IS NULL ORDER BY os.created_at DESC LIMIT 100`,[req.params.id,req.usuarioLogado.empresa_id])
+      ]);
+      return res.json({...cliente.rows[0],aparelhos:equipamentos.rows,ordens:ordens.rows});
+    } catch(e) { return res.status(500).json({erro:'Falha ao carregar cliente.'}); }
+  }
+
+  async inativarCliente(req,res) {
+    try {
+      const r=await db.transaction(async c=>{const cliente=await c.query('UPDATE clientes SET deleted_at=NOW() WHERE id=$1 AND empresa_id=$2 AND deleted_at IS NULL RETURNING id',[req.params.id,req.usuarioLogado.empresa_id]);if(!cliente.rows[0])return null;await c.query('UPDATE aparelhos SET deleted_at=NOW() WHERE cliente_id=$1 AND empresa_id=$2 AND deleted_at IS NULL',[req.params.id,req.usuarioLogado.empresa_id]);return cliente.rows[0]});
+      if(!r)return res.status(404).json({erro:'Cliente não encontrado.'});return res.sendStatus(204);
+    } catch(e) { return res.status(500).json({erro:'Falha ao inativar cliente.'}); }
+  }
+
+  async inativarEquipamento(req,res) {
+    try {const r=await db.query('UPDATE aparelhos SET deleted_at=NOW() WHERE id=$1 AND empresa_id=$2 AND deleted_at IS NULL RETURNING id',[req.params.id,req.usuarioLogado.empresa_id]);if(!r.rows[0])return res.status(404).json({erro:'Equipamento não encontrado.'});return res.sendStatus(204)}
+    catch(e){return res.status(500).json({erro:'Falha ao inativar equipamento.'})}
+  }
 }
 
 module.exports = new CadastroController();

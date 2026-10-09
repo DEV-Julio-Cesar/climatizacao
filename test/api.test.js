@@ -122,3 +122,17 @@ test('registro push rejeita token malformado', async () => {
   });
   assert.equal(result.status, 400);
 });
+
+test('usuário sem permissão não altera catálogo', async () => {
+  const result = await request(server, '/catalogo/produtos/1', {
+    method:'PATCH', headers:{ Authorization:`Bearer ${tokenRestrito}`, 'Content-Type':'application/json' }, body:'{}',
+  });
+  assert.equal(result.status, 403);
+});
+
+test('usuário sem permissão não inativa cliente', async () => {
+  const result = await request(server, '/clientes/1', {
+    method:'DELETE', headers:{ Authorization:`Bearer ${tokenRestrito}` },
+  });
+  assert.equal(result.status, 403);
+});
