@@ -176,6 +176,22 @@ test('atendente assume conversa de forma vinculada ao próprio usuário', async 
   } finally { db.query = originalQuery; }
 });
 
+test('somente atendente responsável encerra a conversa', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql, params) => {
+    assert.match(sql, /encerrado_em=NOW\(\)/);
+    assert.deepEqual(params, ['15', 3, 2]);
+    return { rows: [{ id: 15 }] };
+  };
+  try {
+    const result = await request(server, '/atendimento/whatsapp/conversas/15/encerrar', {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.mensagem, 'Atendimento encerrado.');
+  } finally { db.query = originalQuery; }
+});
+
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {
   const originalQuery = db.query;
   db.query = async (sql, params) => {

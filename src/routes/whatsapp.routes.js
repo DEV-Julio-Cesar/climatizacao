@@ -11,4 +11,5 @@ router.get('/atendimento/whatsapp/conversas/:id', permitir('ATENDIMENTO_VISUALIZ
 router.post('/atendimento/whatsapp/conversas/:id/mensagens', permitir('ATENDIMENTO_RESPONDER'), controller.enviarMensagem);
 router.patch('/atendimento/whatsapp/conversas/:id/fila', permitir('ATENDIMENTO_RESPONDER'), controller.alterarFila);
 router.post('/atendimento/whatsapp/conversas/:id/assumir', permitir('ATENDIMENTO_RESPONDER'), controller.assumir);
+router.post('/atendimento/whatsapp/conversas/:id/encerrar', permitir('ATENDIMENTO_RESPONDER'), controller.encerrar);
 module.exports = router;

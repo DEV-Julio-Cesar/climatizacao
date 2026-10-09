@@ -68,7 +68,7 @@ class WhatsAppController {
           const conversa = await db.query(
             `INSERT INTO whatsapp_conversas(empresa_id,cliente_id,telefone,nome_contato,ultima_mensagem,ultima_mensagem_em,nao_lidas,janela_atendimento_ate)
              VALUES($1,$2,$3,$4,$5,$6,1,$6::timestamptz+INTERVAL '24 hours')
-             ON CONFLICT(empresa_id,telefone) DO UPDATE SET cliente_id=COALESCE(EXCLUDED.cliente_id,whatsapp_conversas.cliente_id),nome_contato=COALESCE(EXCLUDED.nome_contato,whatsapp_conversas.nome_contato),ultima_mensagem=EXCLUDED.ultima_mensagem,ultima_mensagem_em=EXCLUDED.ultima_mensagem_em,nao_lidas=whatsapp_conversas.nao_lidas+1,janela_atendimento_ate=EXCLUDED.janela_atendimento_ate,updated_at=NOW() RETURNING *`,
+             ON CONFLICT(empresa_id,telefone) DO UPDATE SET cliente_id=COALESCE(EXCLUDED.cliente_id,whatsapp_conversas.cliente_id),nome_contato=COALESCE(EXCLUDED.nome_contato,whatsapp_conversas.nome_contato),ultima_mensagem=EXCLUDED.ultima_mensagem,ultima_mensagem_em=EXCLUDED.ultima_mensagem_em,nao_lidas=whatsapp_conversas.nao_lidas+1,janela_atendimento_ate=EXCLUDED.janela_atendimento_ate,bot_etapa=CASE WHEN whatsapp_conversas.encerrado_em IS NOT NULL THEN 'INICIO' ELSE whatsapp_conversas.bot_etapa END,bot_ativo=CASE WHEN whatsapp_conversas.encerrado_em IS NOT NULL THEN TRUE ELSE whatsapp_conversas.bot_ativo END,fila_status=CASE WHEN whatsapp_conversas.encerrado_em IS NOT NULL THEN 'AUTOMACAO' ELSE whatsapp_conversas.fila_status END,atendente_id=CASE WHEN whatsapp_conversas.encerrado_em IS NOT NULL THEN NULL ELSE whatsapp_conversas.atendente_id END,encerrado_em=NULL,updated_at=NOW() RETURNING *`,
             [vinculo.empresa_id, vinculo.cliente_id || null, telefone, contato?.profile?.name || vinculo.nome || null, conteudo, data]
           );
           const inserida = await db.query(
@@ -87,7 +87,7 @@ class WhatsAppController {
       const result = await db.query(
         `SELECT w.*,c.nome AS cliente_nome,u.nome AS atendente_nome FROM whatsapp_conversas w
          LEFT JOIN clientes c ON c.id=w.cliente_id LEFT JOIN usuarios u ON u.id=w.atendente_id
-         WHERE w.empresa_id=$1 AND (w.fila_status<>'ATENDENDO' OR w.atendente_id=$2)
+         WHERE w.empresa_id=$1 AND w.encerrado_em IS NULL AND (w.fila_status<>'ATENDENDO' OR w.atendente_id=$2)
          ORDER BY w.ultima_mensagem_em DESC NULLS LAST,w.updated_at DESC LIMIT 300`,
         [req.usuarioLogado.empresa_id, req.usuarioLogado.usuario_id]
       );
@@ -155,6 +155,18 @@ class WhatsAppController {
       if (!result.rows[0]) return res.status(409).json({ erro: 'Esta conversa já foi assumida por outro atendente.' });
       return res.json(result.rows[0]);
     } catch (error) { return res.status(500).json({ erro: 'Falha ao assumir atendimento.' }); }
+  }
+
+  async encerrar(req, res) {
+    try {
+      const result = await db.query(
+        `UPDATE whatsapp_conversas SET encerrado_em=NOW(),atendente_id=NULL,bot_ativo=FALSE,updated_at=NOW()
+         WHERE id=$1 AND empresa_id=$2 AND fila_status='ATENDENDO' AND atendente_id=$3 RETURNING id`,
+        [req.params.id, req.usuarioLogado.empresa_id, req.usuarioLogado.usuario_id]
+      );
+      if (!result.rows[0]) return res.status(409).json({ erro: 'Somente o atendente responsável pode encerrar esta conversa.' });
+      return res.json({ mensagem: 'Atendimento encerrado.' });
+    } catch (error) { return res.status(500).json({ erro: 'Falha ao encerrar atendimento.' }); }
   }
 }
 module.exports = new WhatsAppController();

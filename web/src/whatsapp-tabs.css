@@ -42,3 +42,16 @@
 .wa-claim:disabled { opacity: .6; }
 .wa-claim + .wa-window { margin-left: 0; }
 @media(max-width:760px) { .wa-claim { margin-left: auto; font-size: 11px; padding: 8px; } }
+.wa-close-service {
+  margin-left: auto;
+  border: 1px solid #d9534f;
+  background: #fff;
+  color: #b53d39;
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.wa-close-service:disabled { opacity: .6; }
+.wa-close-service + .wa-window { margin-left: 0; }
+.wa-success { margin-top: 15px; padding: 10px; border-radius: 10px; background: #e5f7f0; color: #087a59; font-weight: 700; font-size: 12px; }

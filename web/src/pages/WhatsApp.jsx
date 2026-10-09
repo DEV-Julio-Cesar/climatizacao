@@ -17,6 +17,8 @@ export default function WhatsApp() {
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [assumindo, setAssumindo] = useState(false);
+  const [encerrando, setEncerrando] = useState(false);
+  const [aviso, setAviso] = useState('');
 
   const carregarConversas = useCallback(async () => {
     try { setConversas((await api.get('/atendimento/whatsapp/conversas')).data); }
@@ -54,6 +56,16 @@ export default function WhatsApp() {
     } catch (e) { setErro(e.response?.data?.erro || 'Falha ao enviar mensagem.'); }
     finally { setEnviando(false); }
   };
+  const encerrar = async () => {
+    if (!window.confirm('Encerrar este atendimento? Se o cliente falar novamente, ele voltará para a automação.')) return;
+    setEncerrando(true); setErro('');
+    try {
+      await api.post(`/atendimento/whatsapp/conversas/${selecionada.id}/encerrar`);
+      setSelecionada(null); setMensagens([]); setAviso('Atendimento encerrado. Uma nova mensagem do cliente reiniciará a automação.');
+      await carregarConversas();
+    } catch (e) { setErro(e.response?.data?.erro || 'Falha ao encerrar atendimento.'); }
+    finally { setEncerrando(false); }
+  };
 
   return <section className="wa-page">
     <aside className="wa-list">
@@ -64,10 +76,10 @@ export default function WhatsApp() {
       {!filtradas.length && <div className="wa-empty">Nenhuma conversa nesta fila.</div>}
     </aside>
     <div className="wa-chat">{selecionada ? <>
-      <header><div className="wa-avatar">{nome(selecionada).slice(0,1).toUpperCase()}</div><div><b>{nome(selecionada)}</b><small>+{selecionada.telefone}{selecionada.atendente_nome ? ` · ${selecionada.atendente_nome}` : ''}</small></div>{selecionada.fila_status !== 'ATENDENDO' && <button className="wa-claim" onClick={assumir} disabled={assumindo}>{assumindo ? 'Assumindo...' : 'Assumir atendimento'}</button>}<span className={janelaAberta ? 'wa-window open' : 'wa-window'}>{janelaAberta ? 'Janela aberta' : 'Janela encerrada'}</span></header>
+      <header><div className="wa-avatar">{nome(selecionada).slice(0,1).toUpperCase()}</div><div><b>{nome(selecionada)}</b><small>+{selecionada.telefone}{selecionada.atendente_nome ? ` · ${selecionada.atendente_nome}` : ''}</small></div>{selecionada.fila_status !== 'ATENDENDO' ? <button className="wa-claim" onClick={assumir} disabled={assumindo}>{assumindo ? 'Assumindo...' : 'Assumir atendimento'}</button> : <button className="wa-close-service" onClick={encerrar} disabled={encerrando}>{encerrando ? 'Encerrando...' : 'Encerrar atendimento'}</button>}<span className={janelaAberta ? 'wa-window open' : 'wa-window'}>{janelaAberta ? 'Janela aberta' : 'Janela encerrada'}</span></header>
       {erro && <div className="alert">{erro}<button onClick={() => setErro('')}>×</button></div>}
       <div className="wa-messages">{mensagens.map((item) => <div key={item.id} className={`wa-message ${item.direcao === 'SAIDA' ? 'out' : 'in'}`}><p>{item.conteudo}</p><small>{hora(item.ocorrida_em)}{item.direcao === 'SAIDA' ? ` · ${item.status}` : ''}</small></div>)}</div>
       <form className="wa-compose" onSubmit={enviar}><textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={janelaAberta ? 'Digite uma mensagem...' : 'Aguarde o cliente enviar uma mensagem ou use um template aprovado.'} maxLength="4096" disabled={!janelaAberta}/><button className="primary" disabled={!janelaAberta || enviando || !texto.trim()}>{enviando ? 'Enviando...' : 'Enviar'}</button></form>
-    </> : <div className="wa-placeholder"><span>◉</span><h2>Atendimento pelo WhatsApp</h2><p>Selecione uma conversa para visualizar o histórico e responder ao cliente.</p>{erro && <div className="alert">{erro}</div>}</div>}</div>
+    </> : <div className="wa-placeholder"><span>◉</span><h2>Atendimento pelo WhatsApp</h2><p>Selecione uma conversa para visualizar o histórico e responder ao cliente.</p>{aviso && <div className="wa-success">{aviso}</div>}{erro && <div className="alert">{erro}</div>}</div>}</div>
   </section>;
 }
