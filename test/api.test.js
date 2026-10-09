@@ -15,6 +15,7 @@ async function request(server, pathname, options = {}) {
 }
 
 const token = jwt.sign({ usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
+const tokenGestor = jwt.sign({ usuario_id: 2, empresa_id: 3, perfil: 'GESTOR' }, process.env.JWT_SECRET);
 const tokenRestrito = jwt.sign({ usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
 let server;
 
@@ -134,6 +135,30 @@ test('técnico com acesso à agenda consegue carregar a lista de responsáveis',
     const result = await request(server, '/tecnicos', { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(result.status, 200);
     assert.equal(result.body[0].id, 7);
+  } finally { db.query = originalQuery; }
+});
+
+test('gestor cadastra técnico somente na própria empresa', async () => {
+  const originalQuery = db.query;
+  let consultas = 0;
+  db.query = async (sql, params) => {
+    consultas += 1;
+    if (sql.includes('SELECT id FROM usuarios')) return { rows: [] };
+    assert.match(sql, /INSERT INTO usuarios/);
+    assert.equal(params[0], 3);
+    assert.equal(params[1], 'Novo Técnico');
+    assert.equal(params[2], 'novo@teste.com');
+    assert.notEqual(params[3], 'senha123');
+    return { rows: [{ id: 20, nome: params[1], email: params[2], perfil: 'TECNICO', ativo: true }] };
+  };
+  try {
+    const result = await request(server, '/configuracoes/tecnicos', {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome: 'Novo Técnico', email: 'NOVO@TESTE.COM', senha: 'senha123' }),
+    });
+    assert.equal(result.status, 201);
+    assert.equal(result.body.tecnico.perfil, 'TECNICO');
+    assert.equal(consultas, 2);
   } finally { db.query = originalQuery; }
 });
 

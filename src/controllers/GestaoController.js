@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const bcrypt = require('bcryptjs');
 const db = require('../config/database');
 const { padroes } = require('../middlewares/permissaoMiddleware');
 
@@ -10,7 +11,46 @@ const contratoSchema = z.object({
   aparelhos: z.array(z.coerce.number().int().positive()).max(100).default([]),
 }).strict();
 
+const tecnicoSchema = z.object({
+  nome: z.string().trim().min(3).max(150),
+  email: z.string().trim().email().max(150).transform((valor) => valor.toLowerCase()),
+  senha: z.string().min(8).max(100),
+}).strict();
+
 class GestaoController {
+  async listarTecnicos(req, res) {
+    try {
+      const result = await db.query(
+        `SELECT id,nome,email,perfil,ativo,created_at FROM usuarios
+         WHERE empresa_id=$1 AND perfil='TECNICO' AND deleted_at IS NULL ORDER BY ativo DESC,nome`,
+        [req.usuarioLogado.empresa_id]
+      );
+      return res.json(result.rows);
+    } catch (error) { return res.status(500).json({ erro: 'Falha ao listar técnicos.' }); }
+  }
+
+  async criarTecnico(req, res) {
+    const validacao = tecnicoSchema.safeParse(req.body);
+    if (!validacao.success) return res.status(400).json({
+      erro: 'Revise os dados do técnico.',
+      detalhes: validacao.error.issues.map((item) => ({ campo: item.path.join('.'), mensagem: item.message })),
+    });
+    try {
+      const { nome, email, senha } = validacao.data;
+      const existente = await db.query('SELECT id FROM usuarios WHERE LOWER(email)=LOWER($1) LIMIT 1', [email]);
+      if (existente.rows[0]) return res.status(409).json({ erro: 'Este e-mail já está cadastrado.' });
+      const senhaHash = await bcrypt.hash(senha, 12);
+      const result = await db.query(
+        `INSERT INTO usuarios(empresa_id,nome,email,senha_hash,perfil)
+         VALUES($1,$2,$3,$4,'TECNICO') RETURNING id,nome,email,perfil,ativo,created_at`,
+        [req.usuarioLogado.empresa_id, nome, email, senhaHash]
+      );
+      return res.status(201).json({ mensagem: 'Técnico cadastrado.', tecnico: result.rows[0] });
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ erro: 'Este e-mail já está cadastrado.' });
+      return res.status(500).json({ erro: 'Falha ao cadastrar técnico.' });
+    }
+  }
   async registrarPush(req,res){const token=String(req.body.token||'');if(!/^ExponentPushToken\[.+\]$|^ExpoPushToken\[.+\]$/.test(token))return res.status(400).json({erro:'Token push inválido.'});try{await db.query(`INSERT INTO dispositivos_push(empresa_id,usuario_id,token,plataforma)VALUES($1,$2,$3,$4) ON CONFLICT(token)DO UPDATE SET empresa_id=EXCLUDED.empresa_id,usuario_id=EXCLUDED.usuario_id,plataforma=EXCLUDED.plataforma,ativo=TRUE,updated_at=NOW()`,[req.usuarioLogado.empresa_id,req.usuarioLogado.usuario_id,token,String(req.body.plataforma||'').slice(0,20)]);return res.sendStatus(204)}catch(e){return res.status(500).json({erro:'Falha ao registrar dispositivo.'})}}
   async listarPermissoes(req,res){try{const r=await db.query(`SELECT u.id,u.nome,u.email,u.perfil,COALESCE(json_agg(json_build_object('permissao',p.permissao,'permitido',p.permitido)) FILTER(WHERE p.permissao IS NOT NULL),'[]') overrides FROM usuarios u LEFT JOIN usuario_permissoes p ON p.usuario_id=u.id WHERE u.empresa_id=$1 AND u.ativo=TRUE GROUP BY u.id ORDER BY u.nome`,[req.usuarioLogado.empresa_id]);return res.json({padroes,usuarios:r.rows})}catch(e){return res.status(500).json({erro:'Falha ao listar permissões.'})}}
   async salvarPermissoes(req,res){if(!Array.isArray(req.body.permissoes)||req.body.permissoes.some(p=>typeof p!=='string'||p.length>60))return res.status(400).json({erro:'Lista de permissões inválida.'});try{await db.transaction(async c=>{const u=await c.query('SELECT id,perfil FROM usuarios WHERE id=$1 AND empresa_id=$2 AND ativo=TRUE',[req.params.id,req.usuarioLogado.empresa_id]);if(!u.rows[0])throw Object.assign(new Error('Usuário não encontrado.'),{status:404});await c.query('DELETE FROM usuario_permissoes WHERE usuario_id=$1',[req.params.id]);const base=new Set((padroes[u.rows[0].perfil]||[]).filter(p=>p!=='*'));for(const permissao of req.body.permissoes){if(!base.has(permissao))await c.query('INSERT INTO usuario_permissoes(usuario_id,permissao,permitido)VALUES($1,$2,TRUE)',[req.params.id,permissao])}for(const permissao of base){if(!req.body.permissoes.includes(permissao))await c.query('INSERT INTO usuario_permissoes(usuario_id,permissao,permitido)VALUES($1,$2,FALSE)',[req.params.id,permissao])}});return res.sendStatus(204)}catch(e){return res.status(e.status||500).json({erro:e.status?e.message:'Falha ao salvar permissões.'})}}

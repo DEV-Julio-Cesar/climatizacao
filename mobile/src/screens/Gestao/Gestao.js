@@ -21,6 +21,7 @@ export default function Gestao({ navigation }) {
     <Menu icon="wallet-outline" title="Recebimentos" text="Registre PIX, dinheiro e cartão" onPress={() => navigation.navigate('Recebimentos')} />
     <Menu icon="repeat-outline" title="Contratos de manutenção" text="Planos recorrentes e visitas preventivas" onPress={() => navigation.navigate('Contratos')} />
     <Menu icon="calendar-outline" title="Agenda da equipe" text="Acompanhe todas as visitas do dia" onPress={() => navigation.navigate('AgendaEquipe')} />
+    <Menu icon="people-outline" title="Equipe técnica" text="Cadastre técnicos e acessos ao aplicativo" onPress={() => navigation.navigate('Tecnicos')} />
     <Menu icon="bar-chart-outline" title="Relatórios gerenciais" text="Receita, produtividade e indicadores" onPress={() => navigation.navigate('Relatorios')} />
   </ScrollView>;
 }

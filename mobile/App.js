@@ -33,6 +33,7 @@ import Contratos from './src/screens/Gestao/Contratos';
 import Relatorios from './src/screens/Gestao/Relatorios';
 import Notificacoes from './src/screens/Gestao/Notificacoes';
 import AgendaEquipe from './src/screens/Gestao/AgendaEquipe';
+import Tecnicos from './src/screens/Gestao/Tecnicos';
 import { initDB } from './src/database/sqlite';
 import { AppProvider } from './src/context/AppContext';
 import PerfilScreen from './src/screens/Perfil/PerfilScreen';
@@ -117,6 +118,7 @@ export default function App() {
             <Stack.Screen name="Relatorios" component={Relatorios} options={{ title: 'Relatórios gerenciais' }} />
             <Stack.Screen name="Notificacoes" component={Notificacoes} options={{ title: 'Notificações' }} />
             <Stack.Screen name="AgendaEquipe" component={AgendaEquipe} options={{ title: 'Agenda da equipe' }} />
+            <Stack.Screen name="Tecnicos" component={Tecnicos} options={{ title: 'Equipe técnica' }} />
           </>
         )}
       </Stack.Navigator>

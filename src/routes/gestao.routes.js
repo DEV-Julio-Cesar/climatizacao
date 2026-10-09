@@ -14,6 +14,8 @@ router.post('/contratos/:id/gerar-visita',perfil('GESTOR','ADMIN'),permitir('GES
 router.get('/relatorios/gerencial',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),controller.relatorio);
 router.get('/agenda/gestao',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),controller.agenda);
 router.get('/configuracoes/permissoes',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.listarPermissoes);
+router.get('/configuracoes/tecnicos',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.listarTecnicos);
+router.post('/configuracoes/tecnicos',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.criarTecnico);
 router.put('/configuracoes/usuarios/:id/permissoes',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.salvarPermissoes);
 router.get('/configuracoes/checklists/:tipo',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.listarChecklist);
 router.put('/configuracoes/checklists/:tipo',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.salvarChecklist);
