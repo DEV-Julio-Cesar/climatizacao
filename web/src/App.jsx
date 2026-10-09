@@ -9,6 +9,7 @@ const Catalogo = lazy(() => import('./pages/Catalogo'));
 const Operacao = lazy(() => import('./pages/Operacao'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Tecnicos = lazy(() => import('./pages/Tecnicos'));
+const WhatsApp = lazy(() => import('./pages/WhatsApp'));
 
 const menus = [
   { id: 'dashboard', label: 'Visão geral', icon: '▦', permission: 'GESTAO_VISUALIZAR', component: Dashboard },
@@ -18,6 +19,7 @@ const menus = [
   { id: 'catalogo', label: 'Produtos e serviços', icon: '▤', permission: 'ESTOQUE_VISUALIZAR', component: Catalogo },
   { id: 'operacao', label: 'Operação', icon: '◇', permissions: ['ESTOQUE_VISUALIZAR', 'FINANCEIRO_VISUALIZAR', 'GESTAO_VISUALIZAR'], component: Operacao },
   { id: 'tecnicos', label: 'Equipe técnica', icon: '♟', permission: 'GESTAO_GERENCIAR', component: Tecnicos },
+  { id: 'whatsapp', label: 'Atendimento', icon: '●', permission: 'ATENDIMENTO_VISUALIZAR', component: WhatsApp },
   { id: 'config', label: 'Configurações', icon: '⚙', permission: 'GESTAO_GERENCIAR', component: Configuracoes },
 ];
 

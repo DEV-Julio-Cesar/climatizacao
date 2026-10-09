@@ -1,0 +1,12 @@
+const express = require('express');
+const controller = require('../controllers/WhatsAppController');
+const auth = require('../middlewares/authMiddleware');
+const permitir = require('../middlewares/permissaoMiddleware');
+const router = express.Router();
+router.get('/webhooks/whatsapp', controller.verificarWebhook);
+router.post('/webhooks/whatsapp', controller.receberWebhook);
+router.use(auth);
+router.get('/atendimento/whatsapp/conversas', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarConversas);
+router.get('/atendimento/whatsapp/conversas/:id', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarMensagens);
+router.post('/atendimento/whatsapp/conversas/:id/mensagens', permitir('ATENDIMENTO_RESPONDER'), controller.enviarMensagem);
+module.exports = router;

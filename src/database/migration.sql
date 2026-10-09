@@ -357,3 +357,33 @@ ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS valor_minimo NUMERIC(10,2
 ALTER TABLE checklist_modelos ADD COLUMN IF NOT EXISTS valor_maximo NUMERIC(10,2);
 
 -- Dados de demonstração são criados separadamente por `npm run seed`.
+
+-- 15. CENTRAL DE ATENDIMENTO WHATSAPP
+CREATE TABLE IF NOT EXISTS whatsapp_conversas (
+  id SERIAL PRIMARY KEY,
+  empresa_id INTEGER NOT NULL REFERENCES empresas(id),
+  cliente_id INTEGER REFERENCES clientes(id),
+  telefone VARCHAR(20) NOT NULL,
+  nome_contato VARCHAR(150),
+  ultima_mensagem TEXT,
+  ultima_mensagem_em TIMESTAMPTZ,
+  nao_lidas INTEGER NOT NULL DEFAULT 0,
+  janela_atendimento_ate TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(empresa_id, telefone)
+);
+CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
+  id SERIAL PRIMARY KEY,
+  conversa_id INTEGER NOT NULL REFERENCES whatsapp_conversas(id) ON DELETE CASCADE,
+  whatsapp_id VARCHAR(150) UNIQUE,
+  direcao VARCHAR(10) NOT NULL CHECK(direcao IN ('ENTRADA','SAIDA')),
+  tipo VARCHAR(30) NOT NULL DEFAULT 'text',
+  conteudo TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'recebida',
+  enviado_por INTEGER REFERENCES usuarios(id),
+  ocorrida_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_conversas_empresa ON whatsapp_conversas(empresa_id,ultima_mensagem_em DESC);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_mensagens_conversa ON whatsapp_mensagens(conversa_id,ocorrida_em);

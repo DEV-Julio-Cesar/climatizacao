@@ -11,7 +11,8 @@ class WhatsAppService {
   constructor() {
     this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
     this.token         = process.env.WHATSAPP_ACCESS_TOKEN;
-    this.apiUrl        = `https://graph.facebook.com/v20.0/${this.phoneNumberId}/messages`;
+    this.graphVersion  = process.env.WHATSAPP_GRAPH_VERSION || 'v24.0';
+    this.apiUrl        = `https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}/messages`;
     this.headers       = {
       'Authorization': `Bearer ${this.token}`,
       'Content-Type':  'application/json',
@@ -37,6 +38,8 @@ class WhatsAppService {
       return response.data;
     } catch (error) {
       console.error('❌ Falha ao enviar texto WhatsApp:', error.response?.data || error.message);
+      const detalhe = error.response?.data?.error?.message;
+      throw new Error(detalhe || 'Falha ao enviar mensagem pela Meta.');
     }
   }
 

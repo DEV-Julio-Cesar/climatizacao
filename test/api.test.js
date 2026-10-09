@@ -1,5 +1,6 @@
 process.env.JWT_SECRET = 'segredo-de-teste-com-tamanho-adequado';
 process.env.APP_URL = 'http://localhost:3000';
+process.env.WHATSAPP_VERIFY_TOKEN = 'token-webhook-teste';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -122,6 +123,17 @@ test('registro push rejeita token malformado', async () => {
     body:JSON.stringify({ token:'token-invalido', plataforma:'android' }),
   });
   assert.equal(result.status, 400);
+});
+
+test('Meta consegue validar o webhook do WhatsApp', async () => {
+  const result = await fetch(`http://127.0.0.1:${server.address().port}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=token-webhook-teste&hub.challenge=123456`);
+  assert.equal(result.status, 200);
+  assert.equal(await result.text(), '123456');
+});
+
+test('conversas do WhatsApp exigem autenticação', async () => {
+  const result = await request(server, '/atendimento/whatsapp/conversas');
+  assert.equal(result.status, 401);
 });
 
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {
