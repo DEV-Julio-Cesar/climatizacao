@@ -30,8 +30,8 @@ async function responderComBot(conversa, mensagemRecebida, clienteNome) {
       [conversa.id, retorno?.messages?.[0]?.id || null, resposta.texto]
     );
     await db.query(
-      'UPDATE whatsapp_conversas SET bot_etapa=$1,ultima_mensagem=$2,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$3',
-      [resposta.proximaEtapa, resposta.texto, conversa.id]
+      `UPDATE whatsapp_conversas SET bot_etapa=$1,fila_status=$2,ultima_mensagem=$3,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$4`,
+      [resposta.proximaEtapa, ['ATENDIMENTO_CLIENTE','NOVO_CONTATO'].includes(resposta.proximaEtapa) ? 'ESPERA' : 'AUTOMACAO', resposta.texto, conversa.id]
     );
   } catch (error) { console.error('Falha na resposta automática do WhatsApp:', error.message); }
 }
@@ -117,9 +117,23 @@ class WhatsAppController {
          VALUES($1,$2,'SAIDA','text',$3,'enviada',$4) RETURNING *`,
         [req.params.id, whatsappId, texto, req.usuarioLogado.usuario_id]
       );
-      await db.query('UPDATE whatsapp_conversas SET ultima_mensagem=$1,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$2', [texto, req.params.id]);
+      await db.query("UPDATE whatsapp_conversas SET fila_status='ATENDENDO',bot_ativo=FALSE,ultima_mensagem=$1,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$2", [texto, req.params.id]);
       return res.status(201).json(mensagem.rows[0]);
     } catch (error) { return res.status(502).json({ erro: error.message || 'Falha ao enviar mensagem pelo WhatsApp.' }); }
+  }
+
+  async alterarFila(req, res) {
+    const status = String(req.body.status || '').toUpperCase();
+    if (!['ATENDENDO','ESPERA','AUTOMACAO'].includes(status)) return res.status(400).json({ erro: 'Fila inválida.' });
+    try {
+      const result = await db.query(
+        `UPDATE whatsapp_conversas SET fila_status=$1,bot_ativo=$2,bot_etapa=CASE WHEN $1='AUTOMACAO' THEN 'INICIO' ELSE bot_etapa END,updated_at=NOW()
+         WHERE id=$3 AND empresa_id=$4 RETURNING *`,
+        [status, status === 'AUTOMACAO', req.params.id, req.usuarioLogado.empresa_id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
+      return res.json(result.rows[0]);
+    } catch (error) { return res.status(500).json({ erro: 'Falha ao mover conversa.' }); }
   }
 }
 module.exports = new WhatsAppController();
