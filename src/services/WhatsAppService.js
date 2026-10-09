@@ -90,8 +90,13 @@ class WhatsAppService {
 
   // Formata o número para o padrão internacional sem '+' (ex: 5511999998888)
   _formatarNumero(telefone) {
-    const apenasDigitos = telefone.replace(/\D/g, '');
-    return apenasDigitos.startsWith('55') ? apenasDigitos : `55${apenasDigitos}`;
+    let apenasDigitos = String(telefone || '').replace(/\D/g, '');
+    if (!apenasDigitos.startsWith('55')) apenasDigitos = `55${apenasDigitos}`;
+    // Alguns webhooks da Meta ainda entregam números móveis brasileiros sem o nono dígito.
+    if (apenasDigitos.length === 12 && apenasDigitos.startsWith('55')) {
+      apenasDigitos = `${apenasDigitos.slice(0, 4)}9${apenasDigitos.slice(4)}`;
+    }
+    return apenasDigitos;
   }
 }
 

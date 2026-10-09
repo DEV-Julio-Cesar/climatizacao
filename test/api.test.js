@@ -9,6 +9,7 @@ const createApp = require('../src/app');
 const db = require('../src/config/database');
 const OsModel = require('../src/models/OsModel');
 const WhatsAppBotService = require('../src/services/WhatsAppBotService');
+const WhatsAppService = require('../src/services/WhatsAppService');
 
 async function request(server, pathname, options = {}) {
   const address = server.address();
@@ -151,6 +152,11 @@ test('robô identifica cliente e encaminha novo contato', () => {
   const novo = WhatsAppBotService.decidir('AGUARDANDO_TIPO', '2');
   assert.match(novo.texto, /Informe seu nome/);
   assert.equal(novo.proximaEtapa, 'NOVO_CONTATO');
+});
+
+test('WhatsApp normaliza o nono dígito de celular brasileiro', () => {
+  assert.equal(WhatsAppService._formatarNumero('558488986845'), '5584988986845');
+  assert.equal(WhatsAppService._formatarNumero('5584988986845'), '5584988986845');
 });
 
 test('atendente assume conversa de forma vinculada ao próprio usuário', async () => {
