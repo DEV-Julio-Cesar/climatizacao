@@ -161,10 +161,17 @@ test('WhatsApp normaliza o nono dígito de celular brasileiro', () => {
 
 test('atendente assume conversa de forma vinculada ao próprio usuário', async () => {
   const originalQuery = db.query;
+  const originalEnviar = WhatsAppService.enviarMensagem;
+  WhatsAppService.enviarMensagem = async (_telefone, texto) => ({ messages: [{ id: `wamid.${texto.length}` }] });
   db.query = async (sql, params) => {
-    assert.match(sql, /atendente_id=\$1/);
-    assert.deepEqual(params, [2, '15', 3]);
-    return { rows: [{ id: 15, fila_status: 'ATENDENDO', atendente_id: 2, bot_ativo: false }] };
+    if (sql.includes("fila_status='ATENDENDO'")) {
+      assert.deepEqual(params, [2, '15', 3]);
+      return { rows: [{ id: 15, telefone: '5584999999999', fila_status: 'ATENDENDO', atendente_id: 2, bot_ativo: false }] };
+    }
+    if (sql.includes('SELECT nome FROM usuarios')) return { rows: [{ nome: 'Carlos' }] };
+    if (sql.includes('INSERT INTO whatsapp_mensagens')) { assert.match(params[2], /Carlos/); return { rows: [{ id: 30 }] }; }
+    if (sql.includes('UPDATE whatsapp_conversas SET ultima_mensagem')) return { rows: [] };
+    throw new Error(`SQL não esperado: ${sql}`);
   };
   try {
     const result = await request(server, '/atendimento/whatsapp/conversas/15/assumir', {
@@ -173,15 +180,19 @@ test('atendente assume conversa de forma vinculada ao próprio usuário', async 
     assert.equal(result.status, 200);
     assert.equal(result.body.atendente_id, 2);
     assert.equal(result.body.bot_ativo, false);
-  } finally { db.query = originalQuery; }
+  } finally { db.query = originalQuery; WhatsAppService.enviarMensagem = originalEnviar; }
 });
 
 test('somente atendente responsável encerra a conversa', async () => {
   const originalQuery = db.query;
+  const originalEnviar = WhatsAppService.enviarMensagem;
+  WhatsAppService.enviarMensagem = async (_telefone, texto) => ({ messages: [{ id: `wamid.${texto.length}` }] });
   db.query = async (sql, params) => {
-    assert.match(sql, /encerrado_em=NOW\(\)/);
-    assert.deepEqual(params, ['15', 3, 2]);
-    return { rows: [{ id: 15 }] };
+    if (sql.includes('SELECT * FROM whatsapp_conversas')) { assert.deepEqual(params, ['15', 3, 2]); return { rows: [{ id: 15, telefone: '5584999999999' }] }; }
+    if (sql.includes('SELECT nome FROM usuarios')) return { rows: [{ nome: 'Carlos' }] };
+    if (sql.includes('INSERT INTO whatsapp_mensagens')) { assert.match(params[2], /encerrado por Carlos/); return { rows: [{ id: 31 }] }; }
+    if (sql.includes('encerrado_em=NOW()')) return { rows: [{ id: 15 }] };
+    throw new Error(`SQL não esperado: ${sql}`);
   };
   try {
     const result = await request(server, '/atendimento/whatsapp/conversas/15/encerrar', {
@@ -189,7 +200,7 @@ test('somente atendente responsável encerra a conversa', async () => {
     });
     assert.equal(result.status, 200);
     assert.equal(result.body.mensagem, 'Atendimento encerrado.');
-  } finally { db.query = originalQuery; }
+  } finally { db.query = originalQuery; WhatsAppService.enviarMensagem = originalEnviar; }
 });
 
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {
