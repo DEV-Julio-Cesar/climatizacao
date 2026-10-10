@@ -56,13 +56,17 @@
 .wa-close-service + .wa-window { margin-left: 0; }
 .wa-success { margin-top: 15px; padding: 10px; border-radius: 10px; background: #e5f7f0; color: #087a59; font-weight: 700; font-size: 12px; }
 
-/* Mantém o compositor sempre visível dentro da altura disponível do painel. */
-.wa-page { height: calc(100vh - 135px); min-height: 520px; }
-.wa-chat { min-height: 0; height: 100%; overflow: hidden; }
-.wa-messages { flex: 1 1 0; min-height: 0; }
-.wa-compose { flex: 0 0 auto; position: relative; z-index: 2; }
-.wa-compose textarea { width: 100%; box-sizing: border-box; }
+/* Estrutura semelhante ao WhatsApp Web: topo e compositor fixos, histórico rolável. */
+.wa-page { height: calc(100dvh - 135px); min-height: 520px; max-height: calc(100dvh - 135px); }
+.wa-list { height: 100%; overflow: hidden; }
+.wa-conversations { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.wa-chat { position: relative; min-height: 0; height: 100%; overflow: hidden; padding-bottom: 76px; }
+.wa-chat > header { flex: 0 0 auto; position: relative; z-index: 3; }
+.wa-messages { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-bottom: 24px; }
+.wa-compose { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; min-height: 76px; box-sizing: border-box; box-shadow: 0 -2px 10px #102d3910; }
+.wa-compose textarea { width: 100%; min-height: 48px; max-height: 110px; box-sizing: border-box; }
+.wa-scroll-anchor { height: 1px; flex: 0 0 1px; }
 @media(max-width:760px) {
   .wa-page { height: auto; min-height: calc(100vh - 110px); }
-  .wa-chat { min-height: 540px; }
+  .wa-chat { min-height: 540px; height: calc(100dvh - 110px); }
 }
