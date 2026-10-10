@@ -55,3 +55,14 @@
 .wa-close-service:disabled { opacity: .6; }
 .wa-close-service + .wa-window { margin-left: 0; }
 .wa-success { margin-top: 15px; padding: 10px; border-radius: 10px; background: #e5f7f0; color: #087a59; font-weight: 700; font-size: 12px; }
+
+/* Mantém o compositor sempre visível dentro da altura disponível do painel. */
+.wa-page { height: calc(100vh - 135px); min-height: 520px; }
+.wa-chat { min-height: 0; height: 100%; overflow: hidden; }
+.wa-messages { flex: 1 1 0; min-height: 0; }
+.wa-compose { flex: 0 0 auto; position: relative; z-index: 2; }
+.wa-compose textarea { width: 100%; box-sizing: border-box; }
+@media(max-width:760px) {
+  .wa-page { height: auto; min-height: calc(100vh - 110px); }
+  .wa-chat { min-height: 540px; }
+}
