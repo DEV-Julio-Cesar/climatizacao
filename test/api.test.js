@@ -127,6 +127,16 @@ test('registro push rejeita token malformado', async () => {
   assert.equal(result.status, 400);
 });
 
+test('alteração de senha exige autenticação e senha forte', async () => {
+  const semToken = await request(server, '/conta/senha', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+  assert.equal(semToken.status, 401);
+  const fraca = await request(server, '/conta/senha', {
+    method:'POST', headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},
+    body:JSON.stringify({ senha_atual:'123456', nova_senha:'abcdefgh' }),
+  });
+  assert.equal(fraca.status, 400);
+});
+
 test('Meta consegue validar o webhook do WhatsApp', async () => {
   const result = await fetch(`http://127.0.0.1:${server.address().port}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=token-webhook-teste&hub.challenge=123456`);
   assert.equal(result.status, 200);

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            mobile/package-lock.json
+      - name: Instalar API
+        run: npm ci
+      - name: Testar API
+        run: npm test
+      - name: Auditar dependências da API
+        run: npm audit --omit=dev --audit-level=high
+      - name: Instalar painel
+        run: npm --prefix web ci
+      - name: Compilar painel
+        run: npm --prefix web run build
+      - name: Auditar painel
+        run: npm --prefix web audit --omit=dev --audit-level=high
+      - name: Instalar aplicativo
+        run: npm --prefix mobile ci
+      - name: Validar aplicativo Expo
+        run: npm --prefix mobile run check

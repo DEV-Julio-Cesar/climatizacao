@@ -8,8 +8,8 @@ import { colors, shadow } from '../../styles/theme';
 import { registrarDispositivoPush } from '../../services/notifications';
 
 export default function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('admin@climasaas.com');
-  const [senha, setSenha] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const entrar = async () => {

@@ -66,7 +66,7 @@ class FotoController {
       if (item.status === 'FINALIZADA') return res.status(409).json({ erro: 'Fotos de O.S. finalizada não podem ser excluídas.' });
       await db.query('DELETE FROM os_fotos WHERE id=$1', [id]);
       const nome = item.url.split('/uploads/')[1];
-      if (nome) await fs.unlink(require('path').join(__dirname, '../../uploads', nome)).catch(() => {});
+      if (nome) await fs.unlink(require('path').join(__dirname, '../../tmp/uploads', nome)).catch(() => {});
       return res.sendStatus(204);
     } catch (error) { return res.status(500).json({ erro: 'Falha ao remover foto.' }); }
   }

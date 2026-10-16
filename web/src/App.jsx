@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Login from './pages/Login';
+import { api } from './services/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
@@ -10,6 +11,7 @@ const Operacao = lazy(() => import('./pages/Operacao'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Tecnicos = lazy(() => import('./pages/Tecnicos'));
 const WhatsApp = lazy(() => import('./pages/WhatsApp'));
+const MinhaConta = lazy(() => import('./pages/MinhaConta'));
 
 const menus = [
   { id: 'dashboard', label: 'Visão geral', icon: '▦', permission: 'GESTAO_VISUALIZAR', component: Dashboard },
@@ -21,6 +23,7 @@ const menus = [
   { id: 'tecnicos', label: 'Equipe técnica', icon: '♟', permission: 'GESTAO_GERENCIAR', component: Tecnicos },
   { id: 'whatsapp', label: 'Atendimento', icon: '●', permission: 'ATENDIMENTO_VISUALIZAR', component: WhatsApp },
   { id: 'config', label: 'Configurações', icon: '⚙', permission: 'GESTAO_GERENCIAR', component: Configuracoes },
+  { id: 'conta', label: 'Minha conta', icon: '○', component: MinhaConta },
 ];
 
 function readUser() {
@@ -39,6 +42,7 @@ export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('climasaas_token'));
   const [user, setUser] = useState(readUser);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [online, setOnline] = useState(true);
   const availableMenus = useMemo(() => menus.filter((item) => canAccess(user, item)), [user]);
   const initialPage = () => location.hash.slice(1) || availableMenus[0]?.id || 'dashboard';
   const [page, setPage] = useState(initialPage);
@@ -54,6 +58,19 @@ export default function App() {
       location.hash = availableMenus[0].id;
     }
   }, [availableMenus, page]);
+
+  useEffect(() => {
+    const expirada = () => { setToken(null); setUser({}); };
+    window.addEventListener('climasaas:session-expired', expirada);
+    return () => window.removeEventListener('climasaas:session-expired', expirada);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const verificar = async () => { try { await api.get('/health', { timeout:5000 }); setOnline(true); } catch { setOnline(false); } };
+    verificar(); const timer = setInterval(verificar, 30000);
+    return () => clearInterval(timer);
+  }, [token]);
 
   if (!token) {
     return <Login onLogin={(newToken, newUser) => {
@@ -94,7 +111,7 @@ export default function App() {
           <button className="menu-toggle" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}>☰</button>
           <div><span className="eyebrow">PAINEL DE GESTÃO</span><h1>{current?.label || 'ClimaSaaS'}</h1></div>
         </div>
-        <div className="header-status"><span className="status-dot" />Sistema online</div>
+        <div className={`header-status ${online ? '' : 'offline'}`}><span className="status-dot" />{online ? 'Sistema online' : 'Sem conexão'}</div>
       </header>
       <Suspense fallback={<div className="loading">Carregando módulo...</div>}>
         {CurrentPage ? <CurrentPage /> : <div className="empty">Você não possui módulos disponíveis.</div>}
