@@ -10,6 +10,7 @@ const db = require('../src/config/database');
 const OsModel = require('../src/models/OsModel');
 const WhatsAppBotService = require('../src/services/WhatsAppBotService');
 const WhatsAppService = require('../src/services/WhatsAppService');
+const PdfService = require('../src/services/PdfService');
 
 async function request(server, pathname, options = {}) {
   const address = server.address();
@@ -306,4 +307,9 @@ test('gestor edita todos os dados comerciais do produto', async () => {
     const result=await request(server,'/catalogo/produtos/9',{method:'PATCH',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:JSON.stringify({nome:'Compressor 12k',sku:'COMP-12',codigo_barras:'7891234567890',descricao:'Compressor inverter',marca:'Marca X',fornecedor:'Fornecedor Teste',categoria:'Compressores',unidade:'UN',localizacao:'A-03',custo:500,preco:850,estoque_minimo:2,ativo:false})});
     assert.equal(result.status,200); assert.equal(result.body.ativo,false);
   } finally { db.query=originalQuery; }
+});
+
+test('PDF de orçamento é gerado em memória sem depender do disco', async () => {
+  const pdf=await PdfService.gerarOrcamentoPdf({id:12,empresa_nome:'Clima Teste',cliente_nome:'Maria',cliente_telefone:'84999999999',subtotal:300,desconto:20,total:280,validade:'2026-12-31',observacoes:'Validade comercial',itens:[{descricao:'Limpeza completa',quantidade:2,valor_unitario:150}]});
+  assert.ok(Buffer.isBuffer(pdf)); assert.equal(pdf.subarray(0,4).toString(),'%PDF'); assert.ok(pdf.length>500);
 });

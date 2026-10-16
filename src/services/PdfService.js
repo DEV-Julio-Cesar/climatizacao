@@ -5,6 +5,20 @@ const path = require('path');
 const uploadsDir = path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
 
 class PdfService {
+  async gerarOrcamentoPdf(o) {
+    return new Promise((resolve,reject)=>{
+      const doc=new PDFDocument({margin:45,size:'A4'}),chunks=[];doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);
+      const moeda=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
+      doc.fillColor('#087a9b').fontSize(22).text(o.empresa_nome||'ClimaSaaS').fillColor('#111').fontSize(16).text(`Orçamento nº ${o.id}`,{align:'right'}).moveDown();
+      doc.fontSize(10).fillColor('#52606d').text([o.empresa_cnpj,o.empresa_telefone,o.empresa_email].filter(Boolean).join(' · ')).fillColor('#111').moveDown();
+      doc.fontSize(13).text('Cliente',{underline:true}).fontSize(10).text(`Nome: ${o.cliente_nome}`).text(`CPF/CNPJ: ${o.cliente_documento||'-'}`).text(`Telefone: ${o.cliente_telefone||'-'}`).text(`Endereço: ${[o.cliente_endereco,o.cliente_numero,o.cliente_cidade,o.cliente_estado].filter(Boolean).join(', ')||'-'}`).moveDown();
+      doc.fontSize(13).text('Itens do orçamento',{underline:true}).moveDown(.5);o.itens.forEach((i,n)=>doc.fontSize(10).text(`${n+1}. ${i.descricao}`).text(`   ${i.quantidade} x ${moeda(i.valor_unitario)} = ${moeda(Number(i.quantidade)*Number(i.valor_unitario))}`).moveDown(.3));
+      doc.moveDown().fontSize(10).text(`Subtotal: ${moeda(o.subtotal)}`,{align:'right'}).text(`Desconto: ${moeda(o.desconto)}`,{align:'right'}).fontSize(14).text(`Total: ${moeda(o.total)}`,{align:'right'});
+      if(o.validade)doc.moveDown().fontSize(10).text(`Validade: ${new Date(`${String(o.validade).slice(0,10)}T12:00:00`).toLocaleDateString('pt-BR')}`);
+      if(o.observacoes)doc.moveDown().fontSize(11).text('Observações',{underline:true}).fontSize(10).text(o.observacoes);
+      doc.moveDown(2).fontSize(9).fillColor('#52606d').text('Documento gerado pelo ClimaSaaS.',{align:'center'});doc.end();
+    });
+  }
   async gerarOsPdf(os, fotos) {
     if (!os) throw new Error('Dados da O.S. não encontrados para gerar PDF.');
     return new Promise((resolve, reject) => {

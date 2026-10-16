@@ -20,6 +20,8 @@ router.post('/produtos/:id/devolver-tecnico', permitir('ESTOQUE_GERENCIAR'), cat
 router.get('/orcamentos', permitir('FINANCEIRO_VISUALIZAR'), controller.listarOrcamentos);
 router.post('/orcamentos', permitir('FINANCEIRO_GERENCIAR'), controller.criarOrcamento);
 router.get('/orcamentos/:id', permitir('FINANCEIRO_VISUALIZAR'), controller.detalheOrcamento);
+router.get('/orcamentos/:id/pdf', permitir('FINANCEIRO_VISUALIZAR'), controller.pdfOrcamento);
+router.post('/orcamentos/:id/whatsapp', permitir('FINANCEIRO_GERENCIAR'), controller.enviarOrcamentoWhatsapp);
 router.patch('/orcamentos/:id/status', permitir('FINANCEIRO_GERENCIAR'), controller.statusOrcamento);
 router.post('/orcamentos/:id/converter', permitir('FINANCEIRO_GERENCIAR'), controller.converter);
 router.post('/os/:id/pagamentos', permitir('FINANCEIRO_GERENCIAR'), controller.registrarPagamento);

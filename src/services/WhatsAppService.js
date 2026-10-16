@@ -98,6 +98,22 @@ class WhatsAppService {
     }
     return apenasDigitos;
   }
+
+  async enviarDocumento(telefone, buffer, filename, caption) {
+    if (!this.configurado()) throw new Error('Integração do WhatsApp não configurada.');
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'application/pdf');
+    form.append('file', new Blob([buffer], { type:'application/pdf' }), filename);
+    try {
+      const upload=await axios.post(`https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}/media`,form,{headers:{Authorization:`Bearer ${this.token}`}});
+      const payload={messaging_product:'whatsapp',to:this._formatarNumero(telefone),type:'document',document:{id:upload.data.id,filename,caption}};
+      return (await axios.post(this.apiUrl,payload,{headers:this.headers})).data;
+    } catch(error) {
+      const detalhe=error.response?.data?.error?.message;
+      throw new Error(detalhe||'A Meta recusou o envio. Verifique a janela de 24 horas e o telefone do cliente.');
+    }
+  }
 }
 
 module.exports = new WhatsAppService();
