@@ -277,6 +277,7 @@ UPDATE aparelhos SET public_id=uuid_generate_v4() WHERE public_id IS NULL;
 ALTER TABLE aparelhos ALTER COLUMN public_id SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_aparelhos_public_id ON aparelhos(public_id);
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMPTZ;
+ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS duracao_prevista_minutos INTEGER NOT NULL DEFAULT 120;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS pdf_url VARCHAR(500);
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS diagnostico TEXT;

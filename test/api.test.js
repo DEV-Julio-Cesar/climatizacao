@@ -128,6 +128,34 @@ test('registro push rejeita token malformado', async () => {
   assert.equal(result.status, 400);
 });
 
+test('agenda impede conflito de horário para o mesmo técnico', async () => {
+  const originalTransaction = db.transaction;
+  db.transaction = async (callback) => callback({
+    query: async (sql, params) => {
+      if (sql.includes('FROM clientes')) return { rows: [{ id: params[0] }] };
+      if (sql.includes('FROM usuarios')) return { rows: [{ id: params[0] }] };
+      if (sql.includes('tstzrange')) return { rows: [{ id: 99 }] };
+      throw new Error(`SQL não esperado: ${sql}`);
+    },
+  });
+  try {
+    const result = await request(server, '/os', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cliente_id: 1,
+        tecnico_id: 7,
+        tipo_servico: 'LIMPEZA',
+        descricao_problema: 'Limpeza completa agendada',
+        agendado_para: '2026-10-20T14:00:00-03:00',
+        duracao_prevista_minutos: 120,
+      }),
+    });
+    assert.equal(result.status, 409);
+    assert.match(result.body.erro, /O\.S\. #99/);
+  } finally { db.transaction = originalTransaction; }
+});
+
 test('alteração de senha exige autenticação e senha forte', async () => {
   const semToken = await request(server, '/conta/senha', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
   assert.equal(semToken.status, 401);
