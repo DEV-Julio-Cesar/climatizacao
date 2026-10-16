@@ -2,11 +2,13 @@ const express = require('express');
 const authMiddleware = require('../middlewares/authMiddleware');
 const permitir = require('../middlewares/permissaoMiddleware');
 const CadastroController = require('../controllers/CadastroController');
+const EnderecoController = require('../controllers/EnderecoController');
 const { validarCliente, validarEquipamento } = require('../validators/cadastroValidator');
 
 const router = express.Router();
 router.use(authMiddleware);
 router.get('/tecnicos', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarTecnicos);
+router.get('/enderecos/cep/:cep', permitir('CLIENTES_VISUALIZAR'), EnderecoController.buscarCep);
 router.get('/clientes', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarClientes);
 router.get('/clientes/:id', permitir('CLIENTES_VISUALIZAR'), CadastroController.detalheCliente);
 router.post('/clientes', permitir('CLIENTES_GERENCIAR'), validarCliente, CadastroController.criarCliente);

@@ -16,7 +16,8 @@ class CadastroController {
   async listarClientes(req, res) {
     try {
       const result = await db.query(
-        `SELECT c.id, c.nome, c.telefone, c.endereco, c.latitude, c.longitude,
+        `SELECT c.id, c.nome, c.telefone, c.cpf_cnpj, c.endereco, c.numero, c.complemento, c.bairro,
+                c.cep, c.cidade, c.estado, c.latitude, c.longitude,
                 COALESCE(json_agg(json_build_object('id', a.id, 'marca', a.marca, 'modelo', a.modelo, 'capacidade', a.capacidade,
                   'numero_serie',a.numero_serie,'patrimonio',a.patrimonio,'tipo_gas',a.tipo_gas,'ambiente',a.ambiente,
                   'proxima_manutencao',a.proxima_manutencao))
@@ -33,22 +34,29 @@ class CadastroController {
 
   async criarCliente(req, res) {
     try {
-      const d=req.body; const r=await db.query(
-        `INSERT INTO clientes (empresa_id,nome,telefone,endereco,cep,cidade,estado,latitude,longitude)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [req.usuarioLogado.empresa_id,d.nome,d.telefone||null,d.endereco||null,d.cep||null,d.cidade||null,d.estado?.toUpperCase()||null,d.latitude||null,d.longitude||null]);
+      const d=req.body; const r=await db.transaction(async (client) => {
+        const criado=await client.query(
+          `INSERT INTO clientes (empresa_id,nome,telefone,cpf_cnpj,endereco,numero,complemento,bairro,cep,cidade,estado,latitude,longitude)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          [req.usuarioLogado.empresa_id,d.nome,normalizarTelefone(d.telefone),somenteDigitos(d.cpf_cnpj),d.endereco||null,d.numero||null,d.complemento||null,d.bairro||null,
+            somenteDigitos(d.cep),d.cidade||null,d.estado?.toUpperCase()||null,d.latitude??null,d.longitude??null]);
+        for(let i=0;i<d.quantidade_aparelhos;i+=1) await client.query(
+          'INSERT INTO aparelhos (empresa_id,cliente_id,ambiente,observacoes) VALUES ($1,$2,$3,$4)',
+          [req.usuarioLogado.empresa_id,criado.rows[0].id,`Aparelho ${i+1}`,'Cadastro inicial — complete os dados do equipamento.']);
+        return criado;
+      });
       return res.status(201).json(r.rows[0]);
-    } catch(e) { return res.status(500).json({erro:'Falha ao cadastrar cliente.'}); }
+    } catch(e) { if(e.code==='23505')return res.status(409).json({erro:'CPF/CNPJ já cadastrado para outro cliente.'}); return res.status(500).json({erro:'Falha ao cadastrar cliente.'}); }
   }
 
   async atualizarCliente(req, res) {
     try {
       const d=req.body; const r=await db.query(
-        `UPDATE clientes SET nome=$1,telefone=$2,endereco=$3,cep=$4,cidade=$5,estado=$6,latitude=$7,longitude=$8
-         WHERE id=$9 AND empresa_id=$10 AND deleted_at IS NULL RETURNING *`,
-        [d.nome,d.telefone||null,d.endereco||null,d.cep||null,d.cidade||null,d.estado?.toUpperCase()||null,d.latitude||null,d.longitude||null,req.params.id,req.usuarioLogado.empresa_id]);
+        `UPDATE clientes SET nome=$1,telefone=$2,cpf_cnpj=$3,endereco=$4,numero=$5,complemento=$6,bairro=$7,cep=$8,cidade=$9,estado=$10,latitude=$11,longitude=$12
+         WHERE id=$13 AND empresa_id=$14 AND deleted_at IS NULL RETURNING *`,
+        [d.nome,normalizarTelefone(d.telefone),somenteDigitos(d.cpf_cnpj),d.endereco||null,d.numero||null,d.complemento||null,d.bairro||null,somenteDigitos(d.cep),d.cidade||null,d.estado?.toUpperCase()||null,d.latitude??null,d.longitude??null,req.params.id,req.usuarioLogado.empresa_id]);
       if(!r.rows[0]) return res.status(404).json({erro:'Cliente não encontrado.'}); return res.json(r.rows[0]);
-    } catch(e) { return res.status(500).json({erro:'Falha ao atualizar cliente.'}); }
+    } catch(e) { if(e.code==='23505')return res.status(409).json({erro:'CPF/CNPJ já cadastrado para outro cliente.'}); return res.status(500).json({erro:'Falha ao atualizar cliente.'}); }
   }
 
   async criarEquipamento(req, res) { return this._salvarEquipamento(req,res,false); }
@@ -101,3 +109,6 @@ class CadastroController {
 }
 
 module.exports = new CadastroController();
+
+function somenteDigitos(valor) { const n=String(valor||'').replace(/\D/g,''); return n||null; }
+function normalizarTelefone(valor) { const n=String(valor||'').replace(/\D/g,''); return n||null; }

@@ -45,7 +45,11 @@ CREATE TABLE IF NOT EXISTS clientes (
   empresa_id  INTEGER      NOT NULL REFERENCES empresas(id),
   nome        VARCHAR(150) NOT NULL,
   telefone    VARCHAR(20),
+  cpf_cnpj    VARCHAR(14),
   endereco    VARCHAR(255),
+  numero      VARCHAR(20),
+  complemento VARCHAR(120),
+  bairro      VARCHAR(120),
   cep         VARCHAR(9),
   cidade      VARCHAR(100),
   estado      VARCHAR(2),
@@ -252,6 +256,12 @@ ALTER TABLE clientes ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cep VARCHAR(9);
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS estado VARCHAR(2);
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cpf_cnpj VARCHAR(14);
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS numero VARCHAR(20);
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS complemento VARCHAR(120);
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS bairro VARCHAR(120);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_empresa_cpf_cnpj
+  ON clientes(empresa_id, cpf_cnpj) WHERE cpf_cnpj IS NOT NULL AND deleted_at IS NULL;
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS numero_serie VARCHAR(100);
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS patrimonio VARCHAR(100);
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS tipo_gas VARCHAR(50);

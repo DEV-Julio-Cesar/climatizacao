@@ -264,3 +264,32 @@ test('usuário sem permissão não inativa cliente', async () => {
   });
   assert.equal(result.status, 403);
 });
+
+test('cadastro de cliente rejeita CPF inválido', async () => {
+  const result = await request(server, '/clientes', {
+    method:'POST', headers:{ Authorization:`Bearer ${tokenGestor}`, 'Content-Type':'application/json' },
+    body:JSON.stringify({ nome:'Cliente Teste', cpf_cnpj:'111.111.111-11', quantidade_aparelhos:1 }),
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.erro, 'Dados inválidos.');
+});
+
+test('cadastro de cliente normaliza contato e cria aparelhos vinculados', async () => {
+  const originalTransaction = db.transaction;
+  let aparelhos = 0;
+  db.transaction = async (callback) => callback({ query:async(sql,params) => {
+    if(sql.includes('INSERT INTO clientes')) {
+      assert.equal(params[0],3); assert.equal(params[2],'84999998888'); assert.equal(params[3],'52998224725');
+      return { rows:[{ id:44, nome:params[1] }] };
+    }
+    if(sql.includes('INSERT INTO aparelhos')) { aparelhos+=1; assert.equal(params[1],44); return { rows:[] }; }
+    throw new Error(`SQL não esperado: ${sql}`);
+  }});
+  try {
+    const result = await request(server, '/clientes', {
+      method:'POST', headers:{ Authorization:`Bearer ${tokenGestor}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ nome:'Cliente Teste', telefone:'(84) 99999-8888', cpf_cnpj:'529.982.247-25', quantidade_aparelhos:2 }),
+    });
+    assert.equal(result.status,201); assert.equal(aparelhos,2);
+  } finally { db.transaction=originalTransaction; }
+});
