@@ -11,6 +11,7 @@ const cadastroRoutes = require('./routes/cadastro.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const gestaoRoutes = require('./routes/gestao.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
+const suprimentosRoutes = require('./routes/suprimentos.routes');
 const authMiddleware = require('./middlewares/authMiddleware');
 
 function createApp() {
@@ -76,6 +77,7 @@ function createApp() {
   app.use(osRoutes);
   app.use(cadastroRoutes);
   app.use(financeiroRoutes);
+  app.use(suprimentosRoutes);
   app.use(gestaoRoutes);
   app.use((_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
   app.use((error, _req, res, _next) => {

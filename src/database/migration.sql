@@ -396,6 +396,28 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(empresa_id, telefone)
 );
+
+-- 13. FORNECEDORES E COMPRAS
+CREATE TABLE IF NOT EXISTS fornecedores (
+  id SERIAL PRIMARY KEY, empresa_id INTEGER NOT NULL REFERENCES empresas(id), nome VARCHAR(150) NOT NULL,
+  cpf_cnpj VARCHAR(14), telefone VARCHAR(20), email VARCHAR(150), cep VARCHAR(8), endereco VARCHAR(255),
+  numero VARCHAR(20), cidade VARCHAR(100), estado VARCHAR(2), observacoes TEXT, ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fornecedores_documento ON fornecedores(empresa_id,cpf_cnpj) WHERE cpf_cnpj IS NOT NULL AND ativo=TRUE;
+CREATE TABLE IF NOT EXISTS compras (
+  id SERIAL PRIMARY KEY, empresa_id INTEGER NOT NULL REFERENCES empresas(id), fornecedor_id INTEGER REFERENCES fornecedores(id),
+  criado_por INTEGER NOT NULL REFERENCES usuarios(id), status VARCHAR(20) NOT NULL DEFAULT 'PEDIDO'
+    CHECK(status IN('PEDIDO','RECEBIDO','CANCELADO')), numero_documento VARCHAR(80), previsao DATE,
+  observacoes TEXT, total NUMERIC(12,2) NOT NULL DEFAULT 0, recebido_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS compra_itens (
+  id SERIAL PRIMARY KEY, compra_id INTEGER NOT NULL REFERENCES compras(id) ON DELETE CASCADE,
+  produto_id INTEGER NOT NULL REFERENCES produtos(id), quantidade NUMERIC(12,2) NOT NULL CHECK(quantidade>0),
+  custo_unitario NUMERIC(10,2) NOT NULL CHECK(custo_unitario>=0), subtotal NUMERIC(12,2) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_compras_empresa_status ON compras(empresa_id,status);
 CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
   id SERIAL PRIMARY KEY,
   conversa_id INTEGER NOT NULL REFERENCES whatsapp_conversas(id) ON DELETE CASCADE,

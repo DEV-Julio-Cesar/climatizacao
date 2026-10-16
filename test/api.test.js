@@ -313,3 +313,17 @@ test('PDF de orçamento é gerado em memória sem depender do disco', async () =
   const pdf=await PdfService.gerarOrcamentoPdf({id:12,empresa_nome:'Clima Teste',cliente_nome:'Maria',cliente_telefone:'84999999999',subtotal:300,desconto:20,total:280,validade:'2026-12-31',observacoes:'Validade comercial',itens:[{descricao:'Limpeza completa',quantidade:2,valor_unitario:150}]});
   assert.ok(Buffer.isBuffer(pdf)); assert.equal(pdf.subarray(0,4).toString(),'%PDF'); assert.ok(pdf.length>500);
 });
+
+test('recebimento de compra atualiza estoque com custo médio e registra movimento', async () => {
+  const originalTransaction=db.transaction;let custoNovo,movimento=false;
+  db.transaction=async callback=>callback({query:async(sql,params)=>{
+    if(sql.includes('FROM compras'))return{rows:[{id:5,status:'PEDIDO'}]};
+    if(sql.includes('FROM compra_itens'))return{rows:[{produto_id:9,quantidade:2,custo_unitario:200}]};
+    if(sql.includes('SELECT estoque,custo'))return{rows:[{estoque:10,custo:100}]};
+    if(sql.includes('UPDATE produtos')){custoNovo=params[1];return{rows:[]}};
+    if(sql.includes('INSERT INTO estoque_movimentos')){movimento=true;return{rows:[]}};
+    if(sql.includes('UPDATE compras'))return{rows:[]};
+    throw new Error(`SQL não esperado: ${sql}`);
+  }});
+  try{const result=await request(server,'/compras/5/receber',{method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`}});assert.equal(result.status,200);assert.ok(Math.abs(custoNovo-116.6666667)<.001);assert.equal(movimento,true)}finally{db.transaction=originalTransaction}
+});
