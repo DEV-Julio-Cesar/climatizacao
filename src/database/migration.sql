@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS aparelhos (
   garantia_ate DATE,
   proxima_manutencao DATE,
   observacoes TEXT,
+  public_id UUID NOT NULL DEFAULT uuid_generate_v4(),
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   deleted_at  TIMESTAMPTZ
 );
@@ -271,6 +272,10 @@ ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS instalado_em DATE;
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS garantia_ate DATE;
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS proxima_manutencao DATE;
 ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS observacoes TEXT;
+ALTER TABLE aparelhos ADD COLUMN IF NOT EXISTS public_id UUID DEFAULT uuid_generate_v4();
+UPDATE aparelhos SET public_id=uuid_generate_v4() WHERE public_id IS NULL;
+ALTER TABLE aparelhos ALTER COLUMN public_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_aparelhos_public_id ON aparelhos(public_id);
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMPTZ;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS pdf_url VARCHAR(500);
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();

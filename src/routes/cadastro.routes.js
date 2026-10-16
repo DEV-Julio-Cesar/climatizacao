@@ -6,6 +6,7 @@ const EnderecoController = require('../controllers/EnderecoController');
 const { validarCliente, validarEquipamento } = require('../validators/cadastroValidator');
 
 const router = express.Router();
+router.get('/equipamentos/publico/:token', CadastroController.equipamentoPublico);
 router.use(authMiddleware);
 router.get('/tecnicos', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarTecnicos);
 router.get('/enderecos/cep/:cep', permitir('CLIENTES_VISUALIZAR'), EnderecoController.buscarCep);
@@ -17,5 +18,7 @@ router.delete('/clientes/:id', permitir('CLIENTES_GERENCIAR'), CadastroControlle
 router.post('/equipamentos', permitir('CLIENTES_GERENCIAR'), validarEquipamento, CadastroController.criarEquipamento.bind(CadastroController));
 router.patch('/equipamentos/:id', permitir('CLIENTES_GERENCIAR'), validarEquipamento, CadastroController.atualizarEquipamento.bind(CadastroController));
 router.get('/equipamentos/:id', permitir('CLIENTES_VISUALIZAR'), CadastroController.detalheEquipamento);
+router.get('/equipamentos/:id/qrcode', permitir('CLIENTES_VISUALIZAR'), CadastroController.qrEquipamento);
+router.get('/equipamentos-alertas', permitir('CLIENTES_VISUALIZAR'), CadastroController.alertasEquipamentos);
 router.delete('/equipamentos/:id', permitir('CLIENTES_GERENCIAR'), CadastroController.inativarEquipamento);
 module.exports = router;
