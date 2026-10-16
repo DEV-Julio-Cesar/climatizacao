@@ -293,3 +293,17 @@ test('cadastro de cliente normaliza contato e cria aparelhos vinculados', async 
     assert.equal(result.status,201); assert.equal(aparelhos,2);
   } finally { db.transaction=originalTransaction; }
 });
+
+test('gestor edita todos os dados comerciais do produto', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql,params) => {
+    assert.match(sql,/codigo_barras/); assert.match(sql,/fornecedor/); assert.match(sql,/localizacao/);
+    assert.equal(params[0],'Compressor 12k'); assert.equal(params[2],'7891234567890');
+    assert.equal(params[5],'Fornecedor Teste'); assert.equal(params[8],'A-03'); assert.equal(params[12],false);
+    return { rows:[{ id:9,nome:params[0],ativo:params[12] }] };
+  };
+  try {
+    const result=await request(server,'/catalogo/produtos/9',{method:'PATCH',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:JSON.stringify({nome:'Compressor 12k',sku:'COMP-12',codigo_barras:'7891234567890',descricao:'Compressor inverter',marca:'Marca X',fornecedor:'Fornecedor Teste',categoria:'Compressores',unidade:'UN',localizacao:'A-03',custo:500,preco:850,estoque_minimo:2,ativo:false})});
+    assert.equal(result.status,200); assert.equal(result.body.ativo,false);
+  } finally { db.query=originalQuery; }
+});

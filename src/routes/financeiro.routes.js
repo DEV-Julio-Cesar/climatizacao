@@ -6,6 +6,7 @@ const catalogo = require('../controllers/CatalogoController');
 
 router.use(auth);
 router.get('/catalogo', permitir('ESTOQUE_VISUALIZAR'), controller.catalogo);
+router.get('/catalogo/gestao', permitir('ESTOQUE_GERENCIAR'), controller.catalogoGestao);
 router.post('/catalogo', permitir('ESTOQUE_GERENCIAR'), controller.criarCatalogo);
 router.patch('/catalogo/servicos/:id', permitir('ESTOQUE_GERENCIAR'), catalogo.atualizarServico);
 router.delete('/catalogo/servicos/:id', permitir('ESTOQUE_GERENCIAR'), catalogo.inativarServico);
