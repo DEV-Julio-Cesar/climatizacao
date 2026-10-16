@@ -122,6 +122,7 @@ class OsController {
               [usuario.empresa_id, item.referencia_id, quantidade, `Baixa automática da O.S. #${id}`, id, usuario.usuario_id]);
             await client.query('UPDATE os_itens SET estoque_baixado=TRUE WHERE id=$1', [item.id]);
           }
+          await client.query("UPDATE estoque_reservas SET status='CONSUMIDO',consumido_em=NOW(),updated_at=NOW() WHERE os_id=$1 AND empresa_id=$2 AND status='ENTREGUE'",[id,usuario.empresa_id]);
         }
         const result = await client.query(
           `UPDATE ordens_servico SET status = $1::varchar,

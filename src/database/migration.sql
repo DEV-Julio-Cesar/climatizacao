@@ -418,6 +418,16 @@ CREATE TABLE IF NOT EXISTS compra_itens (
   custo_unitario NUMERIC(10,2) NOT NULL CHECK(custo_unitario>=0), subtotal NUMERIC(12,2) NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_compras_empresa_status ON compras(empresa_id,status);
+CREATE TABLE IF NOT EXISTS estoque_reservas (
+  id SERIAL PRIMARY KEY, empresa_id INTEGER NOT NULL REFERENCES empresas(id), os_id INTEGER NOT NULL REFERENCES ordens_servico(id),
+  produto_id INTEGER NOT NULL REFERENCES produtos(id), tecnico_id INTEGER NOT NULL REFERENCES usuarios(id),
+  quantidade NUMERIC(12,2) NOT NULL CHECK(quantidade>0), status VARCHAR(20) NOT NULL DEFAULT 'RESERVADO'
+    CHECK(status IN('RESERVADO','ENTREGUE','CONSUMIDO','CANCELADO')),
+  criado_por INTEGER NOT NULL REFERENCES usuarios(id), entregue_em TIMESTAMPTZ, consumido_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reservas_empresa_status ON estoque_reservas(empresa_id,status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reserva_ativa_os_produto ON estoque_reservas(os_id,produto_id) WHERE status IN('RESERVADO','ENTREGUE');
 CREATE TABLE IF NOT EXISTS whatsapp_mensagens (
   id SERIAL PRIMARY KEY,
   conversa_id INTEGER NOT NULL REFERENCES whatsapp_conversas(id) ON DELETE CASCADE,

@@ -327,3 +327,14 @@ test('recebimento de compra atualiza estoque com custo médio e registra movimen
   }});
   try{const result=await request(server,'/compras/5/receber',{method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`}});assert.equal(result.status,200);assert.ok(Math.abs(custoNovo-116.6666667)<.001);assert.equal(movimento,true)}finally{db.transaction=originalTransaction}
 });
+
+test('reserva de material impede quantidade acima do saldo disponível', async () => {
+  const originalTransaction=db.transaction;
+  db.transaction=async callback=>callback({query:async(sql)=>{
+    if(sql.includes('FROM ordens_servico'))return{rows:[{id:20,tecnico_id:7}]};
+    if(sql.includes('FROM produtos'))return{rows:[{id:9,estoque:5}]};
+    if(sql.includes('SUM(quantidade)'))return{rows:[{reservado:3}]};
+    throw new Error(`SQL não esperado: ${sql}`);
+  }});
+  try{const result=await request(server,'/estoque/reservas',{method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:JSON.stringify({os_id:20,produto_id:9,quantidade:3})});assert.equal(result.status,422);assert.match(result.body.erro,/Disponível para reserva: 2/)}finally{db.transaction=originalTransaction}
+});
