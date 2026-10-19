@@ -22,16 +22,11 @@ class PdfService {
   async gerarOsPdf(os, fotos) {
     if (!os) throw new Error('Dados da O.S. não encontrados para gerar PDF.');
     return new Promise((resolve, reject) => {
-      const filename = `os_${os.id}_${Date.now()}.pdf`;
-      const output = path.join(uploadsDir, filename);
       const doc = new PDFDocument({ margin: 45, size: 'A4' });
-      const stream = fs.createWriteStream(output);
-      stream.on('error', reject);
-      const publicUrl = process.env.APP_URL || (process.env.RENDER_EXTERNAL_HOSTNAME
-        ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : 'http://localhost:3000');
-      stream.on('finish', () => resolve(`${publicUrl}/uploads/${filename}`));
+      const chunks = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-      doc.pipe(stream);
 
       doc.fontSize(20).text('Ordem de Serviço', { align: 'center' }).moveDown();
       doc.fontSize(11)
@@ -73,6 +68,7 @@ class PdfService {
       }
 
       const anexos = fotos.map((foto) => {
+        if (foto.conteudo) return { ...foto, path: foto.conteudo };
         try {
           const pathname = new URL(foto.url).pathname;
           const candidate = path.join(uploadsDir, path.basename(pathname));

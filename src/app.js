@@ -51,6 +51,39 @@ function createApp() {
   app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use('/uploads', express.static(path.resolve(__dirname, '..', 'tmp', 'uploads')));
+  app.get('/arquivos/fotos/:chave', async (req, res) => {
+    try {
+      const resultado = await db.query(
+        'SELECT conteudo,mime_type FROM os_fotos WHERE storage_key=$1 AND conteudo IS NOT NULL',
+        [req.params.chave],
+      );
+      const arquivo = resultado.rows[0];
+      if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+      res.setHeader('Content-Type', arquivo.mime_type || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(arquivo.conteudo);
+    } catch (_error) {
+      return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+    }
+  });
+  app.get('/arquivos/ordens/:chave.pdf', async (req, res) => {
+    try {
+      const resultado = await db.query(
+        'SELECT id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND pdf_conteudo IS NOT NULL AND deleted_at IS NULL',
+        [req.params.chave],
+      );
+      const arquivo = resultado.rows[0];
+      if (!arquivo) return res.status(404).json({ erro: 'Relatório não encontrado.' });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="ordem_servico_${arquivo.id}.pdf"`);
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(arquivo.pdf_conteudo);
+    } catch (_error) {
+      return res.status(404).json({ erro: 'Relatório não encontrado.' });
+    }
+  });
   const painelDir=path.resolve(__dirname,'..','web','dist');
   app.use('/painel',express.static(painelDir));
   app.get('/painel/*',(_req,res)=>res.sendFile(path.join(painelDir,'index.html')));

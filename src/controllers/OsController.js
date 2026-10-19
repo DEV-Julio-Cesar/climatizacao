@@ -3,6 +3,7 @@ const OsModel = require("../models/OsModel");
 const PdfService = require("../services/PdfService");
 const WhatsAppService = require("../services/WhatsAppService");
 const PushService = require("../services/PushService");
+const crypto = require("crypto");
 
 const transicoes = {
   ABERTA: ["EM_ANDAMENTO", "CANCELADA"],
@@ -239,7 +240,7 @@ class OsController {
         );
         const [fotos, checklist, medicoes, itens] = await Promise.all([
           db.query(
-            `SELECT tipo,url,comentario,latitude,longitude,capturada_em FROM os_fotos f JOIN ordens_servico os ON os.id = f.os_id
+            `SELECT tipo,url,comentario,latitude,longitude,capturada_em,conteudo,mime_type FROM os_fotos f JOIN ordens_servico os ON os.id = f.os_id
            WHERE f.os_id = $1 AND os.empresa_id = $2 ORDER BY f.created_at`,
             [id, usuario.empresa_id],
           ),
@@ -256,10 +257,15 @@ class OsController {
         dados.checklist = checklist.rows;
         dados.medicoes = medicoes.rows[0] || {};
         dados.itens = itens.rows;
-        pdfUrl = await PdfService.gerarOsPdf(dados, fotos.rows);
+        const pdfConteudo = await PdfService.gerarOsPdf(dados, fotos.rows);
+        const pdfStorageKey = crypto.randomUUID();
+        const baseUrl = process.env.APP_URL || (process.env.RENDER_EXTERNAL_HOSTNAME
+          ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
+          : `${req.protocol}://${req.get("host")}`);
+        pdfUrl = `${baseUrl}/arquivos/ordens/${pdfStorageKey}.pdf`;
         await db.query(
-          "UPDATE ordens_servico SET pdf_url = $1 WHERE id = $2 AND empresa_id = $3",
-          [pdfUrl, id, usuario.empresa_id],
+          "UPDATE ordens_servico SET pdf_url=$1,pdf_storage_key=$2,pdf_conteudo=$3 WHERE id=$4 AND empresa_id=$5",
+          [pdfUrl, pdfStorageKey, pdfConteudo, id, usuario.empresa_id],
         );
         if (dados.telefone_whatsapp && WhatsAppService.configurado()) {
           void WhatsAppService.enviarPdfOs(

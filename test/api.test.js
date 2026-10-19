@@ -128,6 +128,38 @@ test('registro push rejeita token malformado', async () => {
   assert.equal(result.status, 400);
 });
 
+test('arquivo de evidência persistido pode ser recuperado após deploy', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql, params) => {
+    assert.match(sql, /storage_key/);
+    assert.equal(params[0], '123e4567-e89b-12d3-a456-426614174000');
+    return { rows: [{ conteudo: Buffer.from('imagem-teste'), mime_type: 'image/jpeg' }] };
+  };
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/fotos/123e4567-e89b-12d3-a456-426614174000`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/jpeg');
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'imagem-teste');
+  } finally { db.query = originalQuery; }
+});
+
+test('PDF persistido da ordem pode ser recuperado após deploy', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql, params) => {
+    assert.match(sql, /pdf_storage_key/);
+    assert.equal(params[0], '123e4567-e89b-12d3-a456-426614174001');
+    return { rows: [{ id: 42, pdf_conteudo: Buffer.from('%PDF-teste') }] };
+  };
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/pdf');
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF-teste');
+  } finally { db.query = originalQuery; }
+});
+
 test('agenda impede conflito de horário para o mesmo técnico', async () => {
   const originalTransaction = db.transaction;
   db.transaction = async (callback) => callback({
@@ -340,6 +372,25 @@ test('gestor edita todos os dados comerciais do produto', async () => {
 test('PDF de orçamento é gerado em memória sem depender do disco', async () => {
   const pdf=await PdfService.gerarOrcamentoPdf({id:12,empresa_nome:'Clima Teste',cliente_nome:'Maria',cliente_telefone:'84999999999',subtotal:300,desconto:20,total:280,validade:'2026-12-31',observacoes:'Validade comercial',itens:[{descricao:'Limpeza completa',quantidade:2,valor_unitario:150}]});
   assert.ok(Buffer.isBuffer(pdf)); assert.equal(pdf.subarray(0,4).toString(),'%PDF'); assert.ok(pdf.length>500);
+});
+
+test('PDF da ordem é gerado em memória para armazenamento persistente', async () => {
+  const pdf = await PdfService.gerarOsPdf({
+    id: 10,
+    empresa_nome: 'ClimaSaaS',
+    tecnico_nome: 'Técnico',
+    finalizado_em: new Date().toISOString(),
+    cliente_nome: 'Cliente',
+    cliente_endereco: 'Rua Teste',
+    tipo_servico: 'LIMPEZA',
+    descricao_problema: 'Limpeza preventiva',
+    valor_total: 150,
+    checklist: [],
+    medicoes: {},
+    itens: [],
+  }, []);
+  assert.ok(Buffer.isBuffer(pdf));
+  assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
 });
 
 test('recebimento de compra atualiza estoque com custo médio e registra movimento', async () => {
