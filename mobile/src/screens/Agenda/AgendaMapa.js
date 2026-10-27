@@ -6,24 +6,61 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../services/api';
 import { tentarSincronizarOffline } from '../../services/SyncService';
+import { sincronizarLembretes, cancelarTodosLembretes } from '../../services/agendaLembretes';
 import { lerCache, salvarCache } from '../../database/sqlite';
 import { colors, shadow } from '../../styles/theme';
+import { useApp } from '../../context/AppContext';
 
 const statusConfig = {
   ABERTA: { label: 'Aguardando', color: colors.primary, background: '#E5F5FA' },
   EM_ANDAMENTO: { label: 'Em atendimento', color: '#A86600', background: '#FFF2D8' },
 };
 export default function Agenda({ navigation, onLogout }) {
+  const { preferencias } = useApp();
   const [ordens, setOrdens] = useState([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false);
   const [filtro, setFiltro] = useState('HOJE'); const [busca, setBusca] = useState('');
   const carregar = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
-    try { await tentarSincronizarOffline(); const dados = await api.chamadaAutenticada(`/os/agenda?filtro=${filtro}&busca=${encodeURIComponent(busca.trim())}`); setOrdens(dados); await salvarCache(`agenda_${filtro}_${busca.trim()}`,dados); }
+    try {
+      await tentarSincronizarOffline();
+      const dados = await api.chamadaAutenticada(`/os/agenda?filtro=${filtro}&busca=${encodeURIComponent(busca.trim())}`);
+      setOrdens(dados);
+      await salvarCache(`agenda_${filtro}_${busca.trim()}`, dados);
+      // Agenda lembretes locais de forma assíncrona — não bloqueia a UI
+      void sincronizarLembretes(dados, preferencias.notificacoes);
+    }
     catch (error) { const cache=await lerCache(`agenda_${filtro}_${busca.trim()}`); if(cache) setOrdens(cache.dados); else Alert.alert('Não foi possível carregar', error.message); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [filtro, busca]);
+  }, [filtro, busca, preferencias.notificacoes]);
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
-  useEffect(() => { navigation.setOptions({ headerRight: () => <View style={{flexDirection:'row'}}><TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('MapaRota')}><Ionicons name="map-outline" size={22} color="#fff" /></TouchableOpacity><TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('Notificacoes')}><Ionicons name="notifications-outline" size={22} color="#fff" /></TouchableOpacity><TouchableOpacity style={styles.headerButton} onPress={async () => { await SecureStore.deleteItemAsync('climasaas_token'); onLogout(); }}><Ionicons name="log-out-outline" size={22} color="#fff" /></TouchableOpacity></View> }); }, [navigation, onLogout]);
+  useEffect(() => {
+    const handleLogout = async () => {
+      // Cancela lembretes locais antes de limpar a sessão
+      await cancelarTodosLembretes().catch(() => {});
+      // Limpa todos os dados de sessão antes de chamar onLogout
+      await Promise.all([
+        SecureStore.deleteItemAsync('climasaas_token'),
+        SecureStore.deleteItemAsync('climasaas_refresh_token'),
+        SecureStore.deleteItemAsync('climasaas_usuario'),
+      ]).catch(() => {});
+      onLogout();
+    };
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('MapaRota')}>
+            <Ionicons name="map-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('Notificacoes')}>
+            <Ionicons name="notifications-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation, onLogout]);
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loading}>Organizando sua agenda...</Text></View>;
   return <View style={styles.container}>
     <FlatList data={ordens} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false}

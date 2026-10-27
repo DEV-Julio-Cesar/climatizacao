@@ -1,12 +1,19 @@
 const crypto = require('crypto');
 const db = require('../config/database');
 const OsModel = require('../models/OsModel');
+const { validarMagicBytes } = require('../config/upload');
+const logger = require('../config/logger');
 
 const TIPOS = ['ANTES', 'DEPOIS', 'ASSINATURA', 'EVIDENCIA'];
 
 class FotoController {
   async upload(req, res) {
     if (!req.file) return res.status(400).json({ erro: 'Imagem não enviada.' });
+
+    // Validação de magic bytes: garante que o conteúdo real bate com o MIME declarado
+    if (!validarMagicBytes(req.file.buffer, req.file.mimetype)) {
+      return res.status(400).json({ erro: 'O arquivo enviado não corresponde ao formato declarado.' });
+    }
       const osId = Number(req.body.os_id);
       const tipo = req.body.tipo;
       const comentario = String(req.body.comentario || '').trim().slice(0, 500) || null;
@@ -48,7 +55,7 @@ class FotoController {
       );
       return res.status(201).json({ mensagem: 'Upload realizado.', foto: result.rows[0] });
     } catch (error) {
-      console.error('Erro no upload:', error.message);
+      logger.erro('foto.upload', { request_id: req.id, erro_mensagem: error.message });
       return res.status(500).json({ erro: 'Falha ao processar o upload.' });
     }
   }

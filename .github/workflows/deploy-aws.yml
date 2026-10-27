@@ -1,0 +1,94 @@
+name: Deploy → AWS ECS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # permite disparar manualmente pelo GitHub
+
+env:
+  AWS_REGION:  us-east-1
+  ECR_REPO:    climasaas-api
+  ECS_CLUSTER: climasaas
+  ECS_SERVICE: climasaas-api
+  CONTAINER:   api
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # necessário para OIDC (sem chave de acesso no repo)
+      contents: read
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Autenticação AWS via OIDC (sem AWS_ACCESS_KEY_ID) ───────────────
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-oidc-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── 3. Login no ECR ────────────────────────────────────────────────────
+      - name: Login ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── 4. Build e push da imagem Docker ───────────────────────────────────
+      - name: Build e push imagem
+        id: build
+        env:
+          REGISTRY:   ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG:  ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/${{ env.ECR_REPO }}:$IMAGE_TAG"
+          LATEST="$REGISTRY/${{ env.ECR_REPO }}:latest"
+
+          docker build -t "$IMAGE" -t "$LATEST" .
+          docker push "$IMAGE"
+          docker push "$LATEST"
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # ── 5. Baixa a task definition registrada no ECS ───────────────────────
+      - name: Baixar task definition atual
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.CONTAINER }} \
+            --query taskDefinition \
+            --region ${{ env.AWS_REGION }} \
+            > task-definition.json
+
+      # ── 6. Substitui a imagem na task definition ───────────────────────────
+      - name: Atualizar imagem na task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name:  ${{ env.CONTAINER }}
+          image:           ${{ steps.build.outputs.image }}
+
+      # ── 7. Deploy no ECS Fargate ───────────────────────────────────────────
+      - name: Deploy no ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition:            ${{ steps.task-def.outputs.task-definition }}
+          service:                    ${{ env.ECS_SERVICE }}
+          cluster:                    ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true   # falha o pipeline se o deploy não subir
+
+      # ── 8. Smoke test pós-deploy ───────────────────────────────────────────
+      - name: Health check pós-deploy
+        run: |
+          # Aguarda até 60s para o container novo passar no health check
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sf "https://api.climasaas.com.br/health" \
+              -o /dev/null -w "%{http_code}" || echo "000")
+            echo "Tentativa $i: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "Health check falhou após 60s" && exit 1

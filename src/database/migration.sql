@@ -34,11 +34,11 @@ CREATE TABLE IF NOT EXISTS usuarios (
                            CHECK (perfil IN ('TECNICO', 'GESTOR', 'ADMIN')),
   ativo       BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  deleted_at  TIMESTAMPTZ
-);
-
--- ============================================================
--- 3. CLIENTES (clientes de cada empresa — Multi-Tenant)
+  deleted_at  TIMESTAMPTZ,
+  -- Preenchido sempre que o usuário troca a senha.
+  -- O authMiddleware rejeita tokens emitidos (iat) antes deste instante.
+  senha_alterada_em TIMESTAMPTZ
+); (clientes de cada empresa — Multi-Tenant)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS clientes (
   id          SERIAL PRIMARY KEY,

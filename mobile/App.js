@@ -70,7 +70,11 @@ export default function App() {
     Promise.all([SecureStore.getItemAsync('climasaas_token'), SecureStore.getItemAsync('climasaas_usuario'), initDB()])
       .then(([saved, usuarioSalvo]) => { setUsuario(usuarioSalvo ? JSON.parse(usuarioSalvo) : null); setToken(saved || null); })
       .catch(() => setToken(null));
-    configurarSessaoExpirada(() => { setUsuario(null); setToken(null); });
+    configurarSessaoExpirada(() => {
+      SecureStore.deleteItemAsync('climasaas_refresh_token').catch(() => {});
+      setUsuario(null);
+      setToken(null);
+    });
     const subscription = Network.addNetworkStateListener((state) => setOnline(Boolean(state.isConnected) && state.isInternetReachable !== false));
     return () => { subscription.remove(); configurarSessaoExpirada(null); };
   }, []);
@@ -92,7 +96,15 @@ export default function App() {
         ) : (
           <>
             <Stack.Screen name="Inicio" options={{ headerShown: false }}>
-              {(props) => <AbasPrincipais {...props} usuario={usuario} onLogout={() => { setUsuario(null); setToken(null); }} />}
+              {(props) => <AbasPrincipais {...props} usuario={usuario} onLogout={async () => {
+                await Promise.all([
+                  SecureStore.deleteItemAsync('climasaas_token'),
+                  SecureStore.deleteItemAsync('climasaas_refresh_token'),
+                  SecureStore.deleteItemAsync('climasaas_usuario'),
+                ]).catch(() => {});
+                setUsuario(null);
+                setToken(null);
+              }} />}
             </Stack.Screen>
             <Stack.Screen name="NovaOS" component={Checklist} options={{ title: 'Nova ordem de serviço' }} />
             <Stack.Screen name="DetalhesOS" component={DetalhesOS} options={{ title: 'Detalhes da visita' }} />

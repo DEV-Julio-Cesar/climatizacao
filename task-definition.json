@@ -1,0 +1,75 @@
+{
+  "comment": "Substitua ACCOUNT_ID e os ARNs dos segredos antes de registrar.",
+  "family": "api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/climasaas-task-execution-role",
+  "taskRoleArn":      "arn:aws:iam::ACCOUNT_ID:role/climasaas-task-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/climasaas-api:latest",
+      "portMappings": [
+        { "containerPort": 3000, "protocol": "tcp" }
+      ],
+      "essential": true,
+      "environment": [
+        { "name": "NODE_ENV",    "value": "production" },
+        { "name": "PORT",        "value": "3000" },
+        { "name": "APP_URL",     "value": "https://api.climasaas.com.br" },
+        { "name": "CORS_ORIGIN", "value": "https://api.climasaas.com.br" },
+        { "name": "LOG_LEVEL",   "value": "info" }
+      ],
+      "secrets": [
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/jwt-secret"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/database-url"
+        },
+        {
+          "name": "WHATSAPP_ACCESS_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/whatsapp:WHATSAPP_ACCESS_TOKEN::"
+        },
+        {
+          "name": "WHATSAPP_PHONE_NUMBER_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/whatsapp:WHATSAPP_PHONE_NUMBER_ID::"
+        },
+        {
+          "name": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/whatsapp:WHATSAPP_BUSINESS_ACCOUNT_ID::"
+        },
+        {
+          "name": "WHATSAPP_APP_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/whatsapp:WHATSAPP_APP_SECRET::"
+        },
+        {
+          "name": "WHATSAPP_VERIFY_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:climasaas/whatsapp:WHATSAPP_VERIFY_TOKEN::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/climasaas-api",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3000/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      }
+    }
+  ]
+}

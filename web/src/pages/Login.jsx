@@ -13,10 +13,23 @@ export default function Login({ onLogin }) {
     setErro('');
     try {
       const { data } = await api.post('/login', { email, senha });
+      // Persiste refresh token imediatamente — antes de chamar onLogin
+      if (data.refresh_token) {
+        localStorage.setItem('climasaas_refresh_token', data.refresh_token);
+      }
       onLogin(data.token, data.usuario);
     } catch (error) {
-      setErro(error.response?.data?.erro || 'Não foi possível entrar. Verifique os dados e tente novamente.');
-    } finally { setLoading(false); }
+      const status = error.response?.status;
+      if (status === 401 || status === 400) {
+        setErro('E-mail ou senha incorretos. Verifique os dados e tente novamente.');
+      } else if (status === 429) {
+        setErro('Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.');
+      } else {
+        setErro(error.response?.data?.erro || 'Não foi possível entrar. Tente novamente em instantes.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return <div className="login">

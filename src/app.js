@@ -5,7 +5,10 @@ const helmet = require('helmet');
 const compression = require('compression');
 const { rateLimit } = require('express-rate-limit');
 const db = require('./config/database');
+const logger = require('./config/logger');
+const requestLogger = require('./middlewares/requestLogger');
 const AuthController = require('./controllers/AuthController');
+const LgpdController = require('./controllers/LgpdController');
 const osRoutes = require('./routes/os.routes');
 const cadastroRoutes = require('./routes/cadastro.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -37,6 +40,7 @@ function createApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
   app.use(compression());
+  app.use(requestLogger);
   app.use((req, res, next) => {
     const origin = req.get('origin');
     const allowedOrigins = String(process.env.CORS_ORIGIN || '').split(',').map((item) => item.trim()).filter(Boolean);
@@ -105,7 +109,14 @@ function createApp() {
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de acesso. Aguarde 15 minutos e tente novamente.' } });
   app.post('/login', loginLimiter, AuthController.login);
+  // Refresh: limite mais generoso, mas ainda protegido contra abuso
+  const refreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { erro: 'Muitas tentativas de renovação de sessão. Aguarde e tente novamente.' } });
+  app.post('/auth/refresh', refreshLimiter, AuthController.refresh);
   app.post('/conta/senha', authMiddleware, AuthController.alterarSenha);
+  // Direitos LGPD: portabilidade (GET) e exclusão (DELETE)
+  app.get('/conta/dados',    authMiddleware, LgpdController.exportarDados);
+  app.delete('/conta/dados', authMiddleware, LgpdController.excluirDados);
   app.use(whatsappRoutes);
   app.use(osRoutes);
   app.use(cadastroRoutes);
@@ -114,9 +125,15 @@ function createApp() {
   app.use(gestaoRoutes);
   app.use((_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
   app.use((error, _req, res, _next) => {
-    console.error(JSON.stringify({ nivel:'erro', request_id:_req.id, metodo:_req.method, rota:_req.originalUrl, mensagem:error.message }));
+    logger.erro('erro_nao_tratado', {
+      request_id: _req.id,
+      metodo: _req.method,
+      rota: _req.originalUrl,
+      erro_mensagem: error.message,
+      erro_stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+    });
     if (error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ erro: 'Arquivo excede 8 MB.' });
-    return res.status(400).json({ erro: error.message || 'Erro interno do servidor.' });
+    return res.status(error.status || 400).json({ erro: error.message || 'Erro interno do servidor.' });
   });
   return app;
 }

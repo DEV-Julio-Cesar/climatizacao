@@ -38,3 +38,8 @@ mobile/.expo-export-check/
 mobile/dist/
 mobile/*.apk
 mobile/*.aab
+
+# AWS — nunca subir arquivos com dados reais de conta/credenciais
+# task-definition.json está no repo com placeholders — crie uma cópia local
+# preenchida e NUNCA a commite
+task-definition.local.json

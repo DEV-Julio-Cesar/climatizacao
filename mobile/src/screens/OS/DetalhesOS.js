@@ -22,14 +22,27 @@ export default function DetalhesOS({ route, navigation }) {
       }
       await api.chamadaAutenticada(`/os/${os.id}/eventos`, 'POST', { evento: tipo, ...coordenadas });
       Vibration.vibrate(120); await carregar();
-      if (tipo === 'CHECKIN') navigation.navigate('CameraOS', { os_id: os.id });
+      if (tipo === 'CHECKIN') navigation.navigate('CameraOS', { os_id: os.id, tipo_inicial: 'ANTES' });
     }
-    catch (e) { if (!e.status) { await enfileirar('EVENTO_OS',{os_id:os.id,dados:{evento:tipo,...coordenadas}}); if(tipo==='CHECKIN') navigation.navigate('CameraOS',{os_id:os.id}); else Alert.alert('Salvo offline','O evento será sincronizado quando a internet voltar.'); } else Alert.alert('Atendimento',e.message); }
+    catch (e) { if (!e.status) { await enfileirar('EVENTO_OS',{os_id:os.id,dados:{evento:tipo,...coordenadas}}); if(tipo==='CHECKIN') navigation.navigate('CameraOS',{os_id:os.id, tipo_inicial:'ANTES'}); else Alert.alert('Salvo offline','O evento será sincronizado quando a internet voltar.'); } else Alert.alert('Atendimento',e.message); }
   };
   const evidencias = (os?.fotos || []).filter((foto) => ['ANTES','DEPOIS','EVIDENCIA'].includes(foto.tipo));
   const removerFoto=(foto)=>Alert.alert('Excluir evidência','Deseja remover esta foto da O.S.?',[{text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:async()=>{try{await api.chamadaAutenticada(`/os/fotos/${foto.id}`,'DELETE');await carregar()}catch(e){Alert.alert('Foto',e.message)}}}]);
   const agendar=async()=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(dataAgenda)||!/^\d{2}:\d{2}$/.test(horaAgenda)||Number.isNaN(Date.parse(`${dataAgenda}T${horaAgenda}:00`)))return Alert.alert('Agendamento','Use AAAA-MM-DD para a data e HH:MM para o horário.');const dados={agendado_para:new Date(`${dataAgenda}T${horaAgenda}:00`).toISOString()};try{await api.chamadaAutenticada(`/os/${os.id}/agendar`,'PATCH',dados);setEditandoAgenda(false);await carregar();Alert.alert('Agendamento','Data e horário atualizados.')}catch(e){if(!e.status){await enfileirar('AGENDAR_OS',{os_id:os.id,dados});setEditandoAgenda(false);Alert.alert('Salvo offline','O agendamento será enviado quando a conexão voltar.')}else Alert.alert('Agendamento',e.message)}};
-  const iniciar = () => os.status === 'ABERTA' ? evento('CHECKIN') : evidencias.length < 2 ? navigation.navigate('CameraOS', { os_id: os.id }) : navigation.navigate('ExecucaoOS', { os_id: os.id });
+  const iniciar = () => {
+    if (os.status === 'ABERTA') return evento('CHECKIN');
+    if (evidencias.length < 2) {
+      // Determina o próximo tipo necessário:
+      // - sem nenhuma foto ANTES → ANTES
+      // - já tem ANTES mas falta DEPOIS → DEPOIS
+      // - demais casos → EVIDENCIA
+      const temAntes = evidencias.some((f) => f.tipo === 'ANTES');
+      const temDepois = evidencias.some((f) => f.tipo === 'DEPOIS');
+      const proximoTipo = !temAntes ? 'ANTES' : !temDepois ? 'DEPOIS' : 'EVIDENCIA';
+      return navigation.navigate('CameraOS', { os_id: os.id, tipo_inicial: proximoTipo });
+    }
+    return navigation.navigate('ExecucaoOS', { os_id: os.id });
+  };
   if (loading || !os) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   const equipamento = [os.aparelho_marca, os.aparelho_modelo, os.aparelho_capacidade].filter(Boolean).join(' · ') || 'Não vinculado';
   return <ScrollView style={styles.container} contentContainerStyle={styles.content}>

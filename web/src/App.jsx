@@ -64,7 +64,13 @@ export default function App() {
   }, [availableMenus, page]);
 
   useEffect(() => {
-    const expirada = () => { setToken(null); setUser({}); };
+    const expirada = () => {
+      localStorage.removeItem('climasaas_token');
+      localStorage.removeItem('climasaas_refresh_token');
+      localStorage.removeItem('climasaas_usuario');
+      setToken(null);
+      setUser({});
+    };
     window.addEventListener('climasaas:session-expired', expirada);
     return () => window.removeEventListener('climasaas:session-expired', expirada);
   }, []);
@@ -89,6 +95,7 @@ export default function App() {
   const CurrentPage = current?.component;
   const logout = () => {
     localStorage.removeItem('climasaas_token');
+    localStorage.removeItem('climasaas_refresh_token');
     localStorage.removeItem('climasaas_usuario');
     setToken(null);
   };
