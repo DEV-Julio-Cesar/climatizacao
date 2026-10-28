@@ -20,6 +20,14 @@ class FotoController {
       const latitude = req.body.latitude === undefined || req.body.latitude === '' ? null : Number(req.body.latitude);
       const longitude = req.body.longitude === undefined || req.body.longitude === '' ? null : Number(req.body.longitude);
       const clientUuid = String(req.body.client_uuid || '').trim().slice(0, 80) || null;
+
+      // Bug 13 — validar capturada_em antes de passar ao banco como timestamptz.
+      // Uma string malformada causaria erro 500 no COALESCE($7::timestamptz,NOW()).
+      const capturadaEmRaw = req.body.capturada_em || null;
+      if (capturadaEmRaw !== null && Number.isNaN(Date.parse(capturadaEmRaw))) {
+        return res.status(400).json({ erro: 'Data de captura inválida.' });
+      }
+      const capturadaEm = capturadaEmRaw;
       try {
       if (!Number.isInteger(osId) || !TIPOS.includes(tipo) || (latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) || (longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180))) {
         return res.status(400).json({ erro: 'os_id ou tipo de foto inválido.' });
@@ -51,7 +59,7 @@ class FotoController {
         `INSERT INTO os_fotos (os_id,tipo,url,comentario,latitude,longitude,capturada_em,client_uuid,storage_key,mime_type,conteudo)
          VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,NOW()),$8,$9,$10,$11)
          RETURNING id,tipo,url,comentario,latitude,longitude,capturada_em`,
-        [osId, tipo, url, comentario, latitude, longitude, req.body.capturada_em || null, clientUuid, storageKey, req.file.mimetype, req.file.buffer]
+        [osId, tipo, url, comentario, latitude, longitude, capturadaEm, clientUuid, storageKey, req.file.mimetype, req.file.buffer]
       );
       return res.status(201).json({ mensagem: 'Upload realizado.', foto: result.rows[0] });
     } catch (error) {

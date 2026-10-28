@@ -43,9 +43,23 @@ export async function initDB() {
  * Enfileira uma operação offline.
  * Gera um client_uuid automaticamente para garantir idempotência no reenvio.
  * Se um item idêntico (mesmo tipo + mesmo uuid) já estiver na fila, é ignorado.
+ *
+ * Bug 7 — Crypto.randomUUID() pode lançar exceção em ambientes sem
+ * entropia suficiente. O fallback garante que o uuid nunca seja vazio,
+ * evitando que o índice único (tipo, client_uuid WHERE client_uuid != '')
+ * seja bypassado e permita duplicatas na fila.
  */
 export async function enfileirar(tipo, payload) {
-  const uuid = await Crypto.randomUUID();
+  let uuid;
+  try {
+    uuid = await Crypto.randomUUID();
+  } catch {
+    // Fallback: combina timestamp com Math.random para gerar uuid único
+    uuid = `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+  if (!uuid) {
+    uuid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
   // Injeta o uuid no payload para que o servidor possa usá-lo como client_uuid
   const payloadComUuid = { ...payload, _client_uuid: uuid };
   const connection = await db();
@@ -62,6 +76,15 @@ export async function listarFila() {
 }
 
 export async function removerFila(id) {
+  return (await db()).runAsync('DELETE FROM fila_sync WHERE id = ?', id);
+}
+
+/**
+ * Remove permanentemente um item da fila após atingir MAX_TENTATIVAS.
+ * Alias semântico de removerFila — distingue descarte por excesso de erros
+ * de remoção por sucesso, facilitando leitura no SyncService.
+ */
+export async function descartar(id) {
   return (await db()).runAsync('DELETE FROM fila_sync WHERE id = ?', id);
 }
 

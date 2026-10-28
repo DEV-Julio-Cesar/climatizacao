@@ -133,7 +133,12 @@ function createApp() {
       erro_stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
     });
     if (error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ erro: 'Arquivo excede 8 MB.' });
-    return res.status(error.status || 400).json({ erro: error.message || 'Erro interno do servidor.' });
+    // Erros com status explícito (lançados pelos controllers) retornam a mensagem original.
+    // Erros sem status (inesperados / internos) usam 500 e mensagem genérica para não
+    // vazar detalhes de implementação ao cliente.
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
+    const mensagem = status < 500 ? error.message : 'Erro interno do servidor.';
+    return res.status(status).json({ erro: mensagem });
   });
   return app;
 }

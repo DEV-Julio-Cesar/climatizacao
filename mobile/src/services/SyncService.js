@@ -1,7 +1,14 @@
 import * as Network from 'expo-network';
-import { listarFila, registrarFalha, removerFila } from '../database/sqlite';
+import { listarFila, registrarFalha, removerFila, descartar } from '../database/sqlite';
 import { api } from './api';
 import * as FileSystem from 'expo-file-system/legacy';
+
+/**
+ * Número máximo de tentativas antes de descartar um item da fila.
+ * Evita que operações com erro permanente (OS deletada, dados inválidos)
+ * fiquem presas para sempre no dispositivo do técnico.
+ */
+const MAX_TENTATIVAS = 5;
 
 /**
  * Verifica se o erro recebido indica que o servidor já processou essa operação.
@@ -57,6 +64,15 @@ export async function tentarSincronizarOffline(itemId = null) {
       }
 
       await registrarFalha(item.id, error.message);
+
+      // Bug 2 — descartar itens que excederam o limite de tentativas.
+      // Itens com erro permanente (OS removida, dados inválidos) não devem
+      // ficar presos na fila para sempre; após MAX_TENTATIVAS são descartados.
+      const tentativasAtuais = (item.tentativas || 0) + 1;
+      if (tentativasAtuais >= MAX_TENTATIVAS) {
+        await descartar(item.id);
+        continue;
+      }
 
       if (error.status && error.status >= 400 && error.status < 500) {
         // Erro permanente do cliente (dados inválidos, acesso negado etc.)
