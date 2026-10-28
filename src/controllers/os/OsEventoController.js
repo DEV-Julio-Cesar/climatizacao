@@ -1,6 +1,7 @@
 const db = require('../../config/database');
 const OsModel = require('../../models/OsModel');
 const PushService = require('../../services/PushService');
+const validarConflito = require('./validarConflito');
 
 const gestor = (perfil) => ['GESTOR', 'ADMIN'].includes(perfil);
 
@@ -110,7 +111,11 @@ class OsEventoController {
   }
 
   async criarRetorno(req, res) {
+    // Bug 4 — validar ID antes de qualquer outra coisa
     const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0)
+      return res.status(400).json({ erro: 'ID inválido.' });
+
     const usuario = req.usuarioLogado;
 
     if (!req.body.agendado_para || Number.isNaN(Date.parse(req.body.agendado_para)))
@@ -123,6 +128,15 @@ class OsEventoController {
           throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
         if (!gestor(usuario.perfil) && origem.tecnico_id !== usuario.usuario_id)
           throw Object.assign(new Error('Acesso negado.'), { status: 403 });
+
+        // Bug 3 — verificar conflito de agenda antes de criar o retorno
+        await validarConflito(
+          client,
+          usuario.empresa_id,
+          origem.tecnico_id,
+          req.body.agendado_para,
+          req.body.duracao_prevista_minutos,
+        );
 
         const motivo = String(req.body.motivo || `Retorno da O.S. #${id}`)
           .trim()
@@ -144,14 +158,15 @@ class OsEventoController {
           ],
         );
 
+        // Bug 5 — filtrar por empresa_id para garantir isolamento multi-tenant
         await client.query(
           `UPDATE ordens_servico
               SET retorno_necessario=TRUE,
                   situacao_pendencia='RETORNO_AGENDADO',
                   motivo_pendencia=$1,
                   updated_at=NOW()
-            WHERE id=$2`,
-          [motivo, id],
+            WHERE id=$2 AND empresa_id=$3`,
+          [motivo, id, usuario.empresa_id],
         );
 
         await OsModel.registrarHistorico(

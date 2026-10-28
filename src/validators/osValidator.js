@@ -59,11 +59,12 @@ const eventoSchema = z
   .superRefine((dados, ctx) => {
     if (
       ["CHECKIN", "CHECKOUT"].includes(dados.evento) &&
-      (dados.latitude === undefined || dados.longitude === undefined)
+      (dados.latitude === undefined || dados.latitude === null ||
+       dados.longitude === undefined || dados.longitude === null)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Localização obrigatória para check-in e check-out.",
+        message: "Localização GPS obrigatória para check-in e check-out.",
         path: ["latitude"],
       });
     }
