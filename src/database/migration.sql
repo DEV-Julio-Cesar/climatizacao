@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS usuarios (
   senha_alterada_em TIMESTAMPTZ
 );
 
+-- Atualização idempotente para bancos de instalações anteriores.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_alterada_em TIMESTAMPTZ;
+
 -- 3. CLIENTES (clientes de cada empresa — Multi-Tenant)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS clientes (
