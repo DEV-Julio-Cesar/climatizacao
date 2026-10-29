@@ -212,7 +212,14 @@ class OsController {
 
     try {
       const atualizada = await db.transaction(async (client) => {
-        const os = await OsModel.buscarPorId(id, usuario.empresa_id, client);
+        // Bug 9 — SELECT FOR UPDATE serializa transações simultâneas na mesma OS.
+        // A segunda requisição PATCH /os/:id/status fica bloqueada até a primeira
+        // commitar, garantindo que a checagem de estado seja atômica.
+        const lockResult = await client.query(
+          'SELECT * FROM ordens_servico WHERE id = $1 AND empresa_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          [id, usuario.empresa_id],
+        );
+        const os = lockResult.rows[0];
         if (!os)
           throw Object.assign(new Error('O.S. não encontrada ou acesso negado.'), { status: 404 });
         if (!gestor(usuario.perfil) && os.tecnico_id !== usuario.usuario_id)
@@ -247,16 +254,18 @@ class OsController {
         return result.rows[0];
       });
 
-      // Geração de PDF e envio WhatsApp fora da transaction (operações lentas)
-      let pdfUrl = null;
+      // Bug 8 — PDF gerado em background: respondemos ao cliente imediatamente
+      // para evitar timeout no mobile. A URL do PDF só fica disponível após a
+      // geração assíncrona; o cliente deve buscar os detalhes da OS novamente
+      // para obtê-la (GET /os/:id retorna pdf_url quando pronto).
       if (novoStatus === 'FINALIZADA') {
-        pdfUrl = await _gerarEPersistirPdf(id, usuario, req);
+        void _gerarEPersistirPdf(id, usuario, req);
       }
 
       return res.json({
         mensagem: `O.S. atualizada para ${novoStatus}.`,
         os: atualizada,
-        pdf_url: pdfUrl,
+        pdf_url: atualizada.pdf_url || null,
       });
     } catch (error) {
       logger.erro('os.atualizarStatus', { request_id: req.id, os_id: id, erro_mensagem: error.message });

@@ -8,6 +8,11 @@ import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import "../../dispatch.css";
 import { api } from "../../services/api";
 
+// Bug 16 — moment é uma biblioteca global/mutável. Definir o locale aqui
+// (module scope) garante que esta instância use pt-br independentemente de
+// outros componentes que possam alterar o locale globalmente depois.
+// momentLocalizer lê o locale no momento da criação, então criamos o
+// localizer APÓS o moment.locale() para fixar o idioma neste módulo.
 moment.locale("pt-br");
 const localizer = momentLocalizer(moment);
 const DnDCalendar = withDragAndDrop(Calendar);

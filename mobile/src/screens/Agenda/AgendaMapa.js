@@ -19,17 +19,30 @@ export default function Agenda({ navigation, onLogout }) {
   const { preferencias } = useApp();
   const [ordens, setOrdens] = useState([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false);
   const [filtro, setFiltro] = useState('HOJE'); const [busca, setBusca] = useState('');
+  // Bug 12 — estado de erro explícito: tela não fica em branco quando
+  // a requisição falha e não há cache disponível.
+  const [erroRede, setErroRede] = useState('');
+
   const carregar = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
+    setErroRede('');
     try {
       await tentarSincronizarOffline();
       const dados = await api.chamadaAutenticada(`/os/agenda?filtro=${filtro}&busca=${encodeURIComponent(busca.trim())}`);
       setOrdens(dados);
       await salvarCache(`agenda_${filtro}_${busca.trim()}`, dados);
-      // Agenda lembretes locais de forma assíncrona — não bloqueia a UI
       void sincronizarLembretes(dados, preferencias.notificacoes);
     }
-    catch (error) { const cache=await lerCache(`agenda_${filtro}_${busca.trim()}`); if(cache) setOrdens(cache.dados); else Alert.alert('Não foi possível carregar', error.message); }
+    catch (error) {
+      const cache = await lerCache(`agenda_${filtro}_${busca.trim()}`);
+      if (cache) {
+        setOrdens(cache.dados);
+        // Avisa sutilmente que os dados são do cache — não bloqueia a tela
+        setErroRede('Sem conexão — exibindo dados salvos anteriormente.');
+      } else {
+        setErroRede(error.message || 'Não foi possível carregar a agenda.');
+      }
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [filtro, busca, preferencias.notificacoes]);
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
@@ -62,11 +75,32 @@ export default function Agenda({ navigation, onLogout }) {
     });
   }, [navigation, onLogout]);
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loading}>Organizando sua agenda...</Text></View>;
+
+  // Erro sem cache — tela de estado vazio com botão de retry
+  if (erroRede && ordens.length === 0) return (
+    <View style={styles.center}>
+      <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
+      <Text style={styles.erroTitulo}>Sem conexão</Text>
+      <Text style={styles.erroTexto}>{erroRede}</Text>
+      <TouchableOpacity style={styles.retryBtn} onPress={() => carregar()}>
+        <Ionicons name="refresh" size={18} color="#fff" />
+        <Text style={styles.retryText}>Tentar novamente</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return <View style={styles.container}>
     <FlatList data={ordens} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => carregar(true)} colors={[colors.primary]} />}
-      ListHeaderComponent={<><LinearGradient colors={[colors.primaryDark, colors.primary]} style={styles.hero}>
+      ListHeaderComponent={<>
+        {erroRede && ordens.length > 0 && (
+          <View style={styles.cacheAviso}>
+            <Ionicons name="cloud-offline-outline" size={15} color="#A86600" />
+            <Text style={styles.cacheAvisoText}>{erroRede}</Text>
+          </View>
+        )}
+        <LinearGradient colors={[colors.primaryDark, colors.primary]} style={styles.hero}>
         <View style={{ flex: 1 }}><Text style={styles.greeting}>Olá, técnico</Text><Text style={styles.heroTitle}>Sua rota de hoje</Text><View style={styles.heroLinks}><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Finalizadas')}><Ionicons name="archive-outline" size={16} color="#fff" /><Text style={styles.historyText}>Finalizadas</Text></TouchableOpacity><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Clientes')}><Ionicons name="people-outline" size={16} color="#fff" /><Text style={styles.historyText}>Clientes</Text></TouchableOpacity><TouchableOpacity style={styles.historyLink} onPress={() => navigation.navigate('Gestao')}><Ionicons name="stats-chart-outline" size={16} color="#fff" /><Text style={styles.historyText}>Gestão</Text></TouchableOpacity></View></View>
         <View style={styles.counter}><Text style={styles.counterNumber}>{ordens.length}</Text><Text style={styles.counterLabel}>visitas</Text></View>
       </LinearGradient><View style={styles.searchWrap}><Ionicons name="search-outline" size={19} color={colors.muted} /><TextInput style={styles.searchInput} value={busca} onChangeText={setBusca} onSubmitEditing={() => carregar()} placeholder="Cliente, endereço ou número da O.S." returnKeyType="search" /></View><ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters}>{[['HOJE','Hoje'],['ATRASADAS','Atrasadas'],['PROXIMAS','Próximas'],['TODAS','Todas abertas']].map(([value,label]) => <TouchableOpacity key={value} style={[styles.filter, filtro === value && styles.filterActive]} onPress={() => setFiltro(value)}><Text style={[styles.filterText, filtro === value && styles.filterTextActive]}>{label}</Text></TouchableOpacity>)}</ScrollView></>}
@@ -94,4 +128,10 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 60 }, emptyIcon: { width: 70, height: 70, borderRadius: 25, backgroundColor: '#E3F7F1', alignItems: 'center', justifyContent: 'center' }, emptyTitle: { fontWeight: '800', fontSize: 20, color: colors.text, marginTop: 15 }, emptyText: { color: colors.muted, marginTop: 4 },
   searchWrap:{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:'#fff',borderWidth:1,borderColor:colors.border,borderRadius:13,paddingHorizontal:12,marginBottom:10},searchInput:{flex:1,paddingVertical:12,color:colors.text},filters:{marginBottom:16},filter:{paddingHorizontal:14,paddingVertical:9,borderRadius:20,backgroundColor:'#fff',borderWidth:1,borderColor:colors.border,marginRight:8},filterActive:{backgroundColor:colors.primary,borderColor:colors.primary},filterText:{color:colors.muted,fontWeight:'700',fontSize:12},filterTextActive:{color:'#fff'},
   fab: { position: 'absolute', right: 18, bottom: 22, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.primary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 18, ...shadow }, fabText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  erroTitulo: { fontWeight: '800', fontSize: 18, color: colors.text, marginTop: 14 },
+  erroTexto: { color: colors.muted, textAlign: 'center', marginTop: 6, paddingHorizontal: 24 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 14, marginTop: 18 },
+  retryText: { color: '#fff', fontWeight: '800' },
+  cacheAviso: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#FFF2D8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
+  cacheAvisoText: { color: '#A86600', fontSize: 12, fontWeight: '700', flex: 1 },
 });

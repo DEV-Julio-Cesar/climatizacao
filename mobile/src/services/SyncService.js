@@ -145,8 +145,12 @@ async function _despachar(tipo, payload, clientUuid) {
         { uri: dados.uri, name: dados.nome, type: dados.mime },
         metadados,
       );
-      // Remove arquivo temporário local independentemente do resultado
-      await FileSystem.deleteAsync(dados.uri, { idempotent: true }).catch(() => {});
+      // Remove arquivo temporário local independentemente do resultado.
+      // Loga falha em vez de silenciar — arquivos não removidos acumulam
+      // espaço no dispositivo do técnico (Bug 15).
+      await FileSystem.deleteAsync(dados.uri, { idempotent: true }).catch((err) => {
+        console.warn('[SyncService] Falha ao remover arquivo temporário de foto:', dados.uri, err?.message);
+      });
       return resultado;
     }
 

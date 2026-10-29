@@ -7,9 +7,37 @@ async function db() {
   return database;
 }
 
+/**
+ * Versão atual do schema do banco SQLite local.
+ * Incremente este número sempre que adicionar uma nova migração em MIGRACOES.
+ * O banco é atualizado automaticamente ao abrir o app com uma versão anterior.
+ */
+const SCHEMA_VERSION = 2;
+
+/**
+ * Migrações indexadas por versão de destino.
+ * Cada entrada é executada exatamente uma vez, quando o banco estiver
+ * na versão imediatamente anterior. Nunca remova ou reordene entradas.
+ */
+const MIGRACOES = {
+  // v1 — schema inicial (tabelas fila_sync e cache_dados)
+  1: null, // criadas no CREATE TABLE IF NOT EXISTS — sem SQL adicional
+
+  // v2 — adiciona client_uuid + índice único de idempotência
+  2: `
+    ALTER TABLE fila_sync ADD COLUMN client_uuid TEXT NOT NULL DEFAULT '';
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_fila_tipo_uuid
+      ON fila_sync (tipo, client_uuid)
+      WHERE client_uuid != '';
+  `,
+};
+
 export async function initDB() {
   const connection = await db();
-  await connection.execAsync(`PRAGMA journal_mode = WAL;
+
+  // Schema base — cria tabelas se não existirem (idempotente)
+  await connection.execAsync(`
+    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS fila_sync (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       tipo        TEXT NOT NULL,
@@ -23,20 +51,25 @@ export async function initDB() {
       chave      TEXT PRIMARY KEY,
       valor      TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );`);
-
-  // Migração segura: adiciona a coluna se ainda não existir (banco antigo)
-  await connection.execAsync(`
-    ALTER TABLE fila_sync ADD COLUMN client_uuid TEXT NOT NULL DEFAULT '';
-  `).catch(() => {/* coluna já existe — ignorar */});
-
-  // Índice único que garante que dois itens do mesmo tipo com o mesmo UUID
-  // não coexistam na fila (INSERT OR IGNORE descarta duplicatas locais).
-  await connection.execAsync(`
-    CREATE UNIQUE INDEX IF NOT EXISTS ux_fila_tipo_uuid
-      ON fila_sync (tipo, client_uuid)
-      WHERE client_uuid != '';
+    );
   `);
+
+  // Bug 14 — controle de versão via PRAGMA user_version.
+  // Aplica as migrações pendentes em ordem crescente e atualiza a versão.
+  const { user_version: versaoAtual } = await connection.getFirstAsync('PRAGMA user_version');
+
+  for (let v = versaoAtual + 1; v <= SCHEMA_VERSION; v++) {
+    const sql = MIGRACOES[v];
+    if (sql) {
+      await connection.execAsync(sql).catch((err) => {
+        // Ignora erros de "column/index already exists" para tolerar
+        // instalações parciais — registra aviso para visibilidade.
+        if (!/already exists/i.test(err.message)) throw err;
+        console.warn(`[sqlite] migração v${v} parcialmente aplicada:`, err.message);
+      });
+    }
+    await connection.execAsync(`PRAGMA user_version = ${v}`);
+  }
 }
 
 /**

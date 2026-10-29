@@ -558,3 +558,109 @@ test('reserva de material impede quantidade acima do saldo disponível', async (
     assert.match(result.body.erro,/Disponível para reserva: 2/);
   } finally { db.query=originalQuery; db.transaction=originalTransaction; }
 });
+
+// ─── Testes dos bugs corrigidos nesta rodada ──────────────────────────────────
+
+test('Bug 8 — finalização retorna imediatamente sem aguardar PDF', async () => {
+  // O cliente recebe a resposta com status FINALIZADA antes da geração do PDF.
+  // pdf_url pode ser null na resposta imediata — o cliente deve buscar GET /os/:id.
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  db.query = async (sql) => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    // Consultas de PDF chamadas em background — não devem bloquear a resposta
+    if (sql.includes('pdf_conteudo') || sql.includes('pdf_storage_key')) return { rows: [] };
+    if (sql.includes('buscarDadosCompletosParaPdf')) return { rows: [] };
+    if (sql.includes('FROM os_fotos')) return { rows: [] };
+    if (sql.includes('FROM os_checklist')) return { rows: [] };
+    if (sql.includes('FROM os_medicoes')) return { rows: [] };
+    if (sql.includes('FROM os_itens')) return { rows: [] };
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async (callback) => callback({
+    query: async (sql) => {
+      // SELECT FOR UPDATE da OS (Bug 9)
+      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 5, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, diagnostico: 'ok', solucao_aplicada: 'ok', checkout_em: new Date() }] };
+      if (sql.includes("tipo='ASSINATURA'")) return { rows: [{ id: 1 }] };
+      if (sql.includes("tipo IN ('ANTES','DEPOIS','EVIDENCIA')")) return { rows: [{ total: 2 }] };
+      if (sql.includes('os_checklist_respostas')) return { rows: [{ id: 1 }] };
+      // baixa de estoque — sem peças nesta OS
+      if (sql.includes('os_itens') && sql.includes('PECA')) return { rows: [] };
+      if (sql.includes('UPDATE estoque_tecnico')) return { rows: [] };
+      if (sql.includes('UPDATE produtos SET estoque')) return { rows: [] };
+      if (sql.includes('INSERT INTO estoque_movimentos')) return { rows: [] };
+      if (sql.includes('UPDATE os_itens SET estoque_baixado')) return { rows: [] };
+      if (sql.includes('estoque_reservas')) return { rows: [] };
+      if (sql.includes('UPDATE ordens_servico')) return { rows: [{ id: 5, status: 'FINALIZADA', empresa_id: 3, tecnico_id: 7, pdf_url: null }] };
+      if (sql.includes('INSERT INTO os_historico')) return { rows: [] };
+      throw new Error(`SQL transação não esperado: ${sql}`);
+    },
+  });
+  try {
+    const inicio = Date.now();
+    const result = await request(server, '/os/5/status', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ novo_status: 'FINALIZADA' }),
+    });
+    const duracao = Date.now() - inicio;
+    // Resposta deve chegar em menos de 500ms (sem aguardar geração de PDF)
+    assert.ok(duracao < 500, `Resposta demorou ${duracao}ms — PDF não deve bloquear`);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.os.status, 'FINALIZADA');
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});
+
+test('Bug 9 — segunda finalização simultânea é rejeitada com 409', async () => {
+  // Simula que a OS já foi finalizada por outra transação concorrente.
+  // O SELECT FOR UPDATE retorna status=FINALIZADA, então a transição é inválida.
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  db.query = async (sql) => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async (callback) => callback({
+    query: async (sql) => {
+      // OS já está FINALIZADA quando o lock é adquirido
+      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 6, status: 'FINALIZADA', empresa_id: 3, tecnico_id: 7 }] };
+      throw new Error(`SQL transação não esperado: ${sql}`);
+    },
+  });
+  try {
+    const result = await request(server, '/os/6/status', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ novo_status: 'FINALIZADA' }),
+    });
+    assert.equal(result.status, 409);
+    assert.match(result.body.erro, /FINALIZADA.*não permitida/i);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});
+
+test('Bug 10 — segundo PAUSAR simultâneo é rejeitado com 409', async () => {
+  // Simula que a OS já está pausada (pausado_em preenchido) quando o lock é adquirido.
+  // O FOR UPDATE garante que a verificação de pausado_em é serializada.
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  db.query = async (sql) => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async (callback) => callback({
+    query: async (sql) => {
+      // OS está EM_ANDAMENTO mas já pausada
+      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 7, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, pausado_em: new Date() }] };
+      throw new Error(`SQL transação não esperado: ${sql}`);
+    },
+  });
+  try {
+    const result = await request(server, '/os/7/eventos', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ evento: 'PAUSAR', motivo: 'Aguardando peça' }),
+    });
+    assert.equal(result.status, 409);
+    assert.match(result.body.erro, /não pode ser pausada/i);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});

@@ -18,7 +18,13 @@ class OsEventoController {
 
     try {
       const atualizada = await db.transaction(async (client) => {
-        const os = await OsModel.buscarPorId(id, usuario.empresa_id, client);
+        // Bug 10 — SELECT FOR UPDATE serializa eventos simultâneos na mesma OS.
+        // Garante que dois PAUSAR concorrentes não gerem duas pausas abertas.
+        const lockResult = await client.query(
+          'SELECT * FROM ordens_servico WHERE id = $1 AND empresa_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          [id, usuario.empresa_id],
+        );
+        const os = lockResult.rows[0];
         if (!os)
           throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
         if (!gestor(usuario.perfil) && os.tecnico_id !== usuario.usuario_id)
