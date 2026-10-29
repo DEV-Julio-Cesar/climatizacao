@@ -12,6 +12,7 @@ const CAMPOS_SENSIVEIS = new Set([
   'token', 'refresh_token', 'access_token', 'authorization',
   'cpf', 'cpf_cnpj', 'telefone', 'email',
   'whatsapp_access_token', 'whatsapp_access_key',
+  'smtp_pass','email_queue_secret','conteudo_cifrado','token_hash',
   'credit_card', 'card_number', 'cvv',
 ]);
 

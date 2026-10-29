@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
+import RecuperarSenha from './RecuperarSenha';
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recuperar,setRecuperar]=useState(false);
 
   const entrar = async (event) => {
     event.preventDefault();
@@ -14,9 +16,7 @@ export default function Login({ onLogin }) {
     try {
       const { data } = await api.post('/login', { email, senha });
       // Persiste refresh token imediatamente — antes de chamar onLogin
-      if (data.refresh_token) {
-        localStorage.setItem('climasaas_refresh_token', data.refresh_token);
-      }
+      if (data.refresh_token) localStorage.setItem('climasaas_refresh_token', data.refresh_token);
       onLogin(data.token, data.usuario);
     } catch (error) {
       const status = error.response?.status;
@@ -32,6 +32,7 @@ export default function Login({ onLogin }) {
     }
   };
 
+  if(recuperar)return <RecuperarSenha onVoltar={()=>setRecuperar(false)}/>;
   return <div className="login">
     <div className="login-visual">
       <div className="login-brand"><span className="brand-mark">❄</span>ClimaSaaS</div>
@@ -49,6 +50,7 @@ export default function Login({ onLogin }) {
       <input id="senha" value={senha} onChange={(e) => setSenha(e.target.value)} type="password" autoComplete="current-password" required />
       {erro && <div className="error" role="alert">{erro}</div>}
       <button className="primary" disabled={loading}>{loading ? 'Entrando...' : 'Entrar no painel'}<span>→</span></button>
+      <button type="button" disabled={loading} onClick={()=>setRecuperar(true)}>Esqueci minha senha</button>
     </form>
   </div>;
 }

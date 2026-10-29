@@ -18,9 +18,9 @@ async function request(server, pathname, options = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-const token = jwt.sign({ usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
-const tokenGestor = jwt.sign({ usuario_id: 2, empresa_id: 3, perfil: 'GESTOR' }, process.env.JWT_SECRET);
-const tokenRestrito = jwt.sign({ usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
+const token = jwt.sign({ token_use:'access',sid:'00000000-0000-4000-8000-000000000001',usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
+const tokenGestor = jwt.sign({ token_use:'access',sid:'00000000-0000-4000-8000-000000000001',usuario_id: 2, empresa_id: 3, perfil: 'GESTOR' }, process.env.JWT_SECRET);
+const tokenRestrito = jwt.sign({ token_use:'access',sid:'00000000-0000-4000-8000-000000000001',usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
 
 /**
  * Resposta padrão do authMiddleware.
@@ -40,6 +40,36 @@ test('health check responde sem autenticação', async () => {
   const result = await request(server, '/health');
   assert.equal(result.status, 200);
   assert.equal(result.body.status, 'ok');
+});
+
+test('login do painel cria sessao e retorna refresh para o cliente atual', async () => {
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  const senhaHash = await require('bcryptjs').hash('Senha12345', 4);
+  let criada = false;
+  db.query = async sql => ({ rows: sql.includes('FROM usuarios')
+    ? [{ id: 7, empresa_id: 3, nome: 'Ana', perfil: 'TECNICO', senha_hash: senhaHash }]
+    : [] });
+  db.transaction = async callback => callback({ query: async (sql, args) => {
+    if (sql.startsWith('SELECT id')) return { rows: [{ id: 7 }] };
+    assert.ok(sql.startsWith('INSERT INTO sessoes'));
+    assert.equal(args[3].length, 64);
+    criada = true;
+    return { rows: [] };
+  } });
+  try {
+    const result = await request(server, '/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ana@example.com', senha: 'Senha12345' }),
+    });
+    assert.equal(result.status, 200);
+    assert.ok(criada);
+    const access = jwt.verify(result.body.token, process.env.JWT_SECRET);
+    const refresh = jwt.verify(result.body.refresh_token, process.env.JWT_SECRET);
+    assert.equal(access.token_use, 'access');
+    assert.equal(refresh.token_use, 'refresh');
+    assert.equal(access.sid, refresh.sid);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
 });
 
 test('rota protegida recusa chamada sem token', async () => {

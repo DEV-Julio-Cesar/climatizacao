@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Login from './pages/Login';
+import RecuperarSenha from './pages/RecuperarSenha';
 import { api } from './services/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -42,7 +43,18 @@ function canAccess(user, item) {
   return !item.permission || permissions.includes(item.permission);
 }
 
-export default function App() {
+export default function App(){
+  const ler=()=>location.hash.startsWith('#redefinir-senha')?new URLSearchParams(location.hash.split('?')[1]||'').get('token')||'':null;
+  const [tokenReset,setTokenReset]=useState(ler);
+  useEffect(()=>{
+    const alterar=()=>{const token=ler();setTokenReset(atual=>token===''&&atual!==null?atual:token);if(token)history.replaceState(null,'',`${location.pathname}${location.search}#redefinir-senha`);};
+    alterar();window.addEventListener('hashchange',alterar);return()=>window.removeEventListener('hashchange',alterar);
+  },[]);
+  if(tokenReset!==null)return <RecuperarSenha token={tokenReset} onVoltar={()=>{location.hash='login';setTokenReset(null);}}/>;
+  return <Painel/>;
+}
+
+function Painel() {
   const [token, setToken] = useState(() => localStorage.getItem('climasaas_token'));
   const [user, setUser] = useState(readUser);
   const [menuOpen, setMenuOpen] = useState(false);

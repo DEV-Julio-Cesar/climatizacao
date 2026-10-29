@@ -3,6 +3,8 @@ const path = require('path');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const RecuperacaoSenhaController=require('./controllers/RecuperacaoSenhaController');
 const { rateLimit } = require('express-rate-limit');
 const db = require('./config/database');
 const logger = require('./config/logger');
@@ -40,6 +42,7 @@ function createApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
   app.use(compression());
+  app.use(cookieParser());
   app.use(requestLogger);
   app.use((req, res, next) => {
     const origin = req.get('origin');
@@ -109,6 +112,15 @@ function createApp() {
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de acesso. Aguarde 15 minutos e tente novamente.' } });
   app.post('/login', loginLimiter, AuthController.login);
+  const recuperarIp = rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas solicitações. Aguarde 15 minutos.'}});
+  const recuperarConta = rateLimit({windowMs:15*60*1000,limit:3,keyGenerator:req=>crypto.createHash('sha256').update((typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'')).digest('hex'),standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas solicitações para este e-mail. Aguarde 15 minutos.'}});
+  const redefinirIp = rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas tentativas. Aguarde 15 minutos.'}});
+  const redefinirToken = rateLimit({windowMs:15*60*1000,limit:5,keyGenerator:req=>crypto.createHash('sha256').update((typeof req.body?.token==='string'?req.body.token:'')).digest('hex'),standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas tentativas para este link. Aguarde ou solicite outro.'}});
+  app.post('/auth/senha/solicitar',recuperarIp,recuperarConta,RecuperacaoSenhaController.solicitar);
+  app.post('/auth/senha/redefinir',redefinirIp,redefinirToken,RecuperacaoSenhaController.redefinir);
+
+  app.post('/auth/refresh/logout',AuthController.logout);
+  app.post('/logout',AuthController.logout);
   // Refresh: limite mais generoso, mas ainda protegido contra abuso
   const refreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de renovação de sessão. Aguarde e tente novamente.' } });

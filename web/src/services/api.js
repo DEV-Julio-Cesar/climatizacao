@@ -86,3 +86,5 @@ api.interceptors.response.use(
     }
   },
 );
+
+export function limparSessao(){for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
