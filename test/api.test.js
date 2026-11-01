@@ -281,6 +281,22 @@ test('repetição de FINALIZADA não baixa estoque nem gera PDF novamente', asyn
   } finally { db.query = originalQuery; db.transaction = originalTransaction; }
 });
 
+test('cancelamento de O.S. exige motivo para preservar o histórico', async () => {
+  const originalQuery = db.query;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  try {
+    const result = await request(server, '/os/10/status', {
+      method: 'PATCH', headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ novo_status:'CANCELADA' }),
+    });
+    assert.equal(result.status, 400);
+    assert.match(JSON.stringify(result.body), /motivo/i);
+  } finally { db.query = originalQuery; }
+});
+
 test('execução rejeita item de catálogo de outra empresa', async () => {
   const executor = { query: async () => ({ rows: [] }) };
   await assert.rejects(() => OsModel.salvarExecucao(10, 3, {

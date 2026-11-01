@@ -31,8 +31,18 @@ const criarOsSchema = z
 const statusSchema = z
   .object({
     novo_status: z.enum(statusOs),
+    motivo_cancelamento: z.string().trim().min(5).max(500).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((dados, ctx) => {
+    if (dados.novo_status === "CANCELADA" && !dados.motivo_cancelamento) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe o motivo do cancelamento.",
+        path: ["motivo_cancelamento"],
+      });
+    }
+  });
 
 const reagendarSchema = z
   .object({

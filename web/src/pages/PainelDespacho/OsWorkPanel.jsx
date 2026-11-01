@@ -40,8 +40,14 @@ export default function OsWorkPanel({ os, recarregar, erro, fechar }) {
     itens: (os.itens || []).map(({ estoque_disponivel, ...item }) => item),
   }));
   const finalizar = () => executar("FINALIZAR", async () => { await api.patch(`/os/${os.id}/status`, { novo_status: "FINALIZADA" }); fechar(); });
+  const cancelar = () => {
+    const motivo = window.prompt("Informe o motivo do encerramento sem atendimento:", "Cliente desistiu do suporte");
+    if (motivo === null) return;
+    if (motivo.trim().length < 5) { erro("Informe um motivo com pelo menos 5 caracteres."); return; }
+    executar("CANCELAR", async () => { await api.patch(`/os/${os.id}/status`, { novo_status: "CANCELADA", motivo_cancelamento: motivo.trim() }); fechar(); });
+  };
   if (["FINALIZADA", "CANCELADA"].includes(os.status)) return null;
-  if (os.status === "ABERTA") return <section className="web-execution"><h3>Execução da O.S.</h3><button className="primary wide" disabled={!!busy} onClick={() => evento("CHECKIN")}>{busy ? "Obtendo GPS..." : "Iniciar e fazer check-in"}</button></section>;
+  if (os.status === "ABERTA") return <section className="web-execution"><h3>Execução da O.S.</h3><button className="primary wide" disabled={!!busy} onClick={() => evento("CHECKIN")}>{busy ? "Obtendo GPS..." : "Iniciar e fazer check-in"}</button><button className="wide cancel-os" disabled={!!busy} onClick={cancelar}>{busy === "CANCELAR" ? "Encerrando..." : "Cliente desistiu — encerrar O.S."}</button></section>;
   return <section className="web-execution"><h3>Execução da O.S.</h3>
     <div className="execution-uploads">{[["ANTES", "Foto antes"], ["DEPOIS", "Foto depois"], ["EVIDENCIA", "Evidência"], ["ASSINATURA", "Assinatura"]].map(([tipo, rotulo]) => <label key={tipo}><input type="file" accept="image/jpeg,image/png" capture="environment" disabled={!!busy} onChange={e => { upload(e.target.files?.[0], tipo); e.target.value = ""; }} /><span>{busy === tipo ? "Enviando..." : rotulo}</span></label>)}</div>
     {[["diagnostico", "Diagnóstico *"], ["solucao_aplicada", "Solução aplicada *"], ["recomendacoes", "Recomendações"]].map(([campo, rotulo]) => <label key={campo}>{rotulo}<textarea value={form[campo]} onChange={e => setForm({ ...form, [campo]: e.target.value })} /></label>)}
@@ -51,5 +57,6 @@ export default function OsWorkPanel({ os, recarregar, erro, fechar }) {
     <button className="primary wide" disabled={!!busy} onClick={salvar}>{busy === "RELATORIO" ? "Salvando..." : "Salvar relatório e checklist"}</button>
     {!os.checkout_em && <button className="wide work-secondary" disabled={!!busy} onClick={() => evento("CHECKOUT")}>Fazer check-out com GPS</button>}
     <button className="wide finish-os" disabled={!!busy} onClick={finalizar}>{busy === "FINALIZAR" ? "Finalizando..." : "Finalizar O.S. e gerar PDF"}</button>
+    <button className="wide cancel-os" disabled={!!busy} onClick={cancelar}>{busy === "CANCELAR" ? "Encerrando..." : "Cliente desistiu — encerrar sem atendimento"}</button>
   </section>;
 }
