@@ -101,7 +101,7 @@ export default function MapaEquipe() {
       >
         <TileLayer
           attribution="© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {itens.map((item) => (
           <Marker

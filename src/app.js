@@ -37,7 +37,7 @@ function createApp() {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org', 'https://unpkg.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org', 'https://unpkg.com'],
         connectSrc: ["'self'"],
         fontSrc: ["'self'", 'data:'],
       },

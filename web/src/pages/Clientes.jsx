@@ -296,7 +296,7 @@ export default function Clientes() {
                 >
                   <TileLayer
                     attribution="© OpenStreetMap"
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
                   <Marker
                     position={[
