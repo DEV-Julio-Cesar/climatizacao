@@ -1,25 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
-const fornecedorVazio = {
-  nome: "",
-  cpf_cnpj: "",
-  telefone: "",
-  email: "",
-  cep: "",
-  endereco: "",
-  numero: "",
-  cidade: "",
-  estado: "",
-  observacoes: "",
-  ativo: true,
-};
-const compraVazia = {
-  fornecedor_id: "",
-  numero_documento: "",
-  previsao: "",
-  observacoes: "",
-  itens: [],
-};
+import { listarOrdens } from "../services/ordens";
+import { Actions, Field, Kpi, Modal, Table } from "./SuprimentosComponents";
+import { COMPRA_VAZIA as compraVazia, FORNECEDOR_VAZIO as fornecedorVazio,
+  date, doc, money, phone } from "./suprimentosUtils";
 export default function Suprimentos() {
   const [tab, setTab] = useState("COMPRAS"),
     [fornecedores, setFornecedores] = useState([]),
@@ -43,14 +27,14 @@ export default function Suprimentos() {
         api.get("/compras"),
         api.get("/catalogo"),
         api.get("/estoque/reservas"),
-        api.get("/os/todas"),
+        listarOrdens({ status: "ATIVAS" }),
       ]);
       setFornecedores(f.data);
       setCompras(c.data);
       setProdutos(p.data.produtos);
       setReservas(r.data);
       setOrdens(
-        o.data.filter((x) => ["ABERTA", "EM_ANDAMENTO"].includes(x.status)),
+        o,
       );
     } catch (e) {
       setError(
@@ -690,98 +674,4 @@ export default function Suprimentos() {
       {msg && <div className="toast">{msg}</div>}
     </>
   );
-}
-function Table({ headers, rows }) {
-  return rows.length ? (
-    <div className="table-scroll supply-table">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, n) => (
-            <tr key={n}>
-              {r.map((c, i) => (
-                <td key={i}>{c}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  ) : (
-    <div className="empty">Nenhum registro encontrado.</div>
-  );
-}
-function Kpi({ label, value, warning }) {
-  return (
-    <div className={warning ? "warning" : ""}>
-      <small>{label}</small>
-      <b>{value}</b>
-    </div>
-  );
-}
-function Modal({ title, close, children, wide }) {
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && close()}
-    >
-      <section className={`form-modal ${wide ? "client-form-modal" : ""}`}>
-        <div className="modal-title">
-          <h2>{title}</h2>
-          <button onClick={close}>×</button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
-function Field({ label, name, form, set, type = "text", ...rest }) {
-  return (
-    <div>
-      <label>{label}</label>
-      <input
-        {...rest}
-        type={type}
-        value={form[name] ?? ""}
-        onChange={(e) => set({ ...form, [name]: e.target.value })}
-      />
-    </div>
-  );
-}
-function Actions({ close, saving }) {
-  return (
-    <div className="modal-actions">
-      <button type="button" onClick={close}>
-        Cancelar
-      </button>
-      <button className="primary" disabled={saving}>
-        {saving ? "Salvando..." : "Salvar"}
-      </button>
-    </div>
-  );
-}
-function money(v) {
-  return Number(v || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-function date(v) {
-  return new Date(v).toLocaleDateString("pt-BR");
-}
-function doc(v) {
-  const n = String(v || "");
-  return n.length === 11
-    ? n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
-    : n;
-}
-function phone(v) {
-  const n = String(v || "");
-  return n.length === 11 ? n.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3") : n;
 }

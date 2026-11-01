@@ -18,6 +18,9 @@ const gestaoRoutes = require('./routes/gestao.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const suprimentosRoutes = require('./routes/suprimentos.routes');
 const authMiddleware = require('./middlewares/authMiddleware');
+const RealtimeService = require('./services/RealtimeService');
+const ObjectStorage = require('./services/ObjectStorageService');
+const ArquivoUrlService = require('./services/ArquivoUrlService');
 
 function createApp() {
   const app = express();
@@ -49,7 +52,11 @@ function createApp() {
     const allowedOrigins = String(process.env.CORS_ORIGIN || '').split(',').map((item) => item.trim()).filter(Boolean);
     const sameOrigin = !origin || origin === `${req.protocol}://${req.get('host')}`;
     if (origin && !sameOrigin && !allowedOrigins.includes(origin)) return res.status(403).json({ erro: 'Origem não autorizada.' });
-    if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
+    }
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -59,17 +66,22 @@ function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use('/uploads', express.static(path.resolve(__dirname, '..', 'tmp', 'uploads')));
   app.get('/arquivos/fotos/:chave', async (req, res) => {
+    if (!ArquivoUrlService.validarFoto(req.params.chave, req.query.exp, req.query.sig)) {
+      return res.status(403).json({ erro: 'Link de arquivo inválido ou expirado.' });
+    }
     try {
       const resultado = await db.query(
-        'SELECT conteudo,mime_type FROM os_fotos WHERE storage_key=$1 AND conteudo IS NOT NULL',
+        'SELECT conteudo,mime_type,os.empresa_id FROM os_fotos f JOIN ordens_servico os ON os.id=f.os_id WHERE f.storage_key=$1',
         [req.params.chave],
       );
       const arquivo = resultado.rows[0];
       if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+      const conteudo = arquivo.conteudo || await ObjectStorage.ler(`empresas/${arquivo.empresa_id}/fotos/${req.params.chave}`);
+      if (!conteudo) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
       res.setHeader('Content-Type', arquivo.mime_type || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Cache-Control', 'private, max-age=900');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      return res.send(arquivo.conteudo);
+      return res.send(conteudo);
     } catch (_error) {
       return res.status(404).json({ erro: 'Arquivo não encontrado.' });
     }
@@ -77,16 +89,18 @@ function createApp() {
   app.get('/arquivos/ordens/:chave.pdf', async (req, res) => {
     try {
       const resultado = await db.query(
-        'SELECT id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND pdf_conteudo IS NOT NULL AND deleted_at IS NULL',
+        'SELECT id,empresa_id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND deleted_at IS NULL',
         [req.params.chave],
       );
       const arquivo = resultado.rows[0];
       if (!arquivo) return res.status(404).json({ erro: 'Relatório não encontrado.' });
+      const conteudo = arquivo.pdf_conteudo || await ObjectStorage.ler(`empresas/${arquivo.empresa_id}/pdf/${req.params.chave}.pdf`);
+      if (!conteudo) return res.status(404).json({ erro: 'Relatório não encontrado.' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="ordem_servico_${arquivo.id}.pdf"`);
       res.setHeader('Cache-Control', 'private, max-age=86400');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      return res.send(arquivo.pdf_conteudo);
+      return res.send(conteudo);
     } catch (_error) {
       return res.status(404).json({ erro: 'Relatório não encontrado.' });
     }
@@ -126,6 +140,7 @@ function createApp() {
     message: { erro: 'Muitas tentativas de renovação de sessão. Aguarde e tente novamente.' } });
   app.post('/auth/refresh', refreshLimiter, AuthController.refresh);
   app.post('/conta/senha', authMiddleware, AuthController.alterarSenha);
+  app.get('/eventos/stream', authMiddleware, RealtimeService.conectar);
   // Direitos LGPD: portabilidade (GET) e exclusão (DELETE)
   app.get('/conta/dados',    authMiddleware, LgpdController.exportarDados);
   app.delete('/conta/dados', authMiddleware, LgpdController.excluirDados);

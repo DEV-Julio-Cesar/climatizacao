@@ -15,10 +15,16 @@ function urlLocal(pdfUrl) {
 export default function Finalizadas() {
   const [ordens, setOrdens] = useState([]); const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false);
-  const carregar = useCallback(async (termo = '') => {
-    try { setOrdens(await api.chamadaAutenticada(`/os/finalizadas?busca=${encodeURIComponent(termo)}`)); }
+  const [cursor, setCursor] = useState(null); const [loadingMore, setLoadingMore] = useState(false);
+  const carregar = useCallback(async (termo = '', proximo = null) => {
+    if (proximo) setLoadingMore(true);
+    try {
+      const pagina = await api.chamadaAutenticada(`/os/finalizadas?limit=30&busca=${encodeURIComponent(termo)}${proximo ? `&cursor=${proximo}` : ''}`);
+      setOrdens(atual => proximo ? [...atual, ...pagina.items] : pagina.items);
+      setCursor(pagina.next_cursor);
+    }
     catch (error) { Alert.alert('Histórico', error.message); }
-    finally { setLoading(false); setRefreshing(false); }
+    finally { setLoading(false); setRefreshing(false); setLoadingMore(false); }
   }, []);
   useFocusEffect(useCallback(() => { carregar(busca); }, [carregar]));
 
@@ -42,9 +48,11 @@ export default function Finalizadas() {
   return <View style={styles.container}>
     <View style={styles.search}><Ionicons name="search-outline" size={20} color={colors.muted} /><TextInput value={busca} onChangeText={setBusca} onSubmitEditing={() => carregar(busca)} placeholder="Buscar por cliente ou número da O.S." placeholderTextColor="#94A3AD" style={styles.searchInput} returnKeyType="search" /><TouchableOpacity onPress={() => carregar(busca)}><Ionicons name="arrow-forward-circle" size={27} color={colors.primary} /></TouchableOpacity></View>
     <FlatList data={ordens} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}
+      onEndReached={() => cursor && !loadingMore && carregar(busca, cursor)} onEndReachedThreshold={0.35}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); carregar(busca); }} colors={[colors.primary]} />}
       ListHeaderComponent={<View style={styles.summary}><View style={styles.summaryIcon}><Ionicons name="checkmark-done" size={26} color={colors.success} /></View><View><Text style={styles.summaryNumber}>{ordens.length} finalizadas</Text><Text style={styles.summaryText}>Documentos prontos para consultar e enviar</Text></View></View>}
       ListEmptyComponent={<View style={styles.empty}><Ionicons name="document-text-outline" size={45} color={colors.border} /><Text style={styles.emptyTitle}>Nenhuma O.S. encontrada</Text></View>}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} style={{marginVertical:18}} /> : null}
       renderItem={({ item }) => <View style={styles.card}>
         <View style={styles.top}><View><Text style={styles.order}>O.S. #{String(item.id).padStart(4, '0')}</Text><Text style={styles.service}>{item.tipo_servico.replaceAll('_', ' ')}</Text></View><View style={styles.done}><Ionicons name="checkmark-circle" size={17} color={colors.success} /><Text style={styles.doneText}>Finalizada</Text></View></View>
         <View style={styles.info}><Ionicons name="person-outline" size={17} color={colors.muted} /><Text style={styles.infoText}>{item.cliente_nome}</Text></View>

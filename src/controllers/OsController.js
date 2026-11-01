@@ -15,6 +15,8 @@ const OsModel = require('../models/OsModel');
 const PdfService = require('../services/PdfService');
 const WhatsAppService = require('../services/WhatsAppService');
 const PushService = require('../services/PushService');
+const RealtimeService = require('../services/RealtimeService');
+const ObjectStorage = require('../services/ObjectStorageService');
 const validarConflito = require('./os/validarConflito');
 const logger = require('../config/logger');
 
@@ -94,10 +96,11 @@ class OsController {
       void PushService.enviar(
         novaOs.tecnico_id,
         'Nova ordem de serviço',
-        `A O.S. #${novaOs.id} foi atribuída a você.`,
+        `A ${novaOs.numero || `O.S. #${novaOs.id}`} foi atribuída a você.`,
         { os_id: novaOs.id },
       );
 
+      RealtimeService.publicar(usuario.empresa_id, 'os', { os_id:novaOs.id, acao:'criada' });
       return res.status(201).json({ mensagem: 'Ordem de serviço criada.', os: novaOs });
     } catch (error) {
       logger.erro('os.criar', { request_id: req.id, erro_mensagem: error.message });
@@ -192,6 +195,7 @@ class OsController {
         { os_id: id },
       );
 
+      RealtimeService.publicar(usuario.empresa_id, 'os', { os_id:id, acao:'reagendada' });
       return res.json({ mensagem: 'O.S. reagendada.' });
     } catch (error) {
       return res
@@ -217,6 +221,9 @@ class OsController {
           throw Object.assign(new Error('O.S. não encontrada ou acesso negado.'), { status: 404 });
         if (!gestor(usuario.perfil) && os.tecnico_id !== usuario.usuario_id)
           throw Object.assign(new Error('Acesso negado a esta O.S.'), { status: 403 });
+        // Uma repetição após perda da resposta não pode baixar estoque nem gerar
+        // histórico/PDF novamente.
+        if (os.status === novoStatus) return { ...os, _status_inalterado: true };
         if (!transicoes[os.status]?.includes(novoStatus))
           throw Object.assign(
             new Error(`Transição de ${os.status} para ${novoStatus} não permitida.`),
@@ -249,9 +256,14 @@ class OsController {
 
       // Geração de PDF e envio WhatsApp fora da transaction (operações lentas)
       let pdfUrl = null;
-      if (novoStatus === 'FINALIZADA') {
+      const statusInalterado = Boolean(atualizada._status_inalterado);
+      delete atualizada._status_inalterado;
+      if (novoStatus === 'FINALIZADA' && !statusInalterado) {
         pdfUrl = await _gerarEPersistirPdf(id, usuario, req);
+      } else if (novoStatus === 'FINALIZADA') {
+        pdfUrl = atualizada.pdf_url || null;
       }
+      RealtimeService.publicar(usuario.empresa_id, 'os', { os_id:id, acao:'status', status:novoStatus });
 
       return res.json({
         mensagem: `O.S. atualizada para ${novoStatus}.`,
@@ -379,7 +391,7 @@ async function _gerarEPersistirPdf(id, usuario, req) {
     const dados = await OsModel.buscarDadosCompletosParaPdf(id, usuario.empresa_id);
     const [fotos, checklist, medicoes, itens] = await Promise.all([
       db.query(
-        `SELECT tipo,url,comentario,latitude,longitude,capturada_em,conteudo,mime_type
+        `SELECT tipo,url,comentario,latitude,longitude,capturada_em,conteudo,mime_type,storage_key
            FROM os_fotos f
            JOIN ordens_servico os ON os.id = f.os_id
           WHERE f.os_id = $1 AND os.empresa_id = $2
@@ -401,8 +413,20 @@ async function _gerarEPersistirPdf(id, usuario, req) {
     dados.medicoes = medicoes.rows[0] || {};
     dados.itens = itens.rows;
 
-    const pdfConteudo = await PdfService.gerarOsPdf(dados, fotos.rows);
+    const fotosComConteudo = await Promise.all(fotos.rows.map(async (foto) => {
+      if (foto.conteudo || !foto.storage_key) return foto;
+      try {
+        const conteudo = await ObjectStorage.ler(`empresas/${usuario.empresa_id}/fotos/${foto.storage_key}`);
+        return { ...foto, conteudo };
+      } catch (error) {
+        logger.erro('os.pdf_foto', { os_id:id, storage_key:foto.storage_key, erro_mensagem:error.message });
+        return foto;
+      }
+    }));
+    const pdfConteudo = await PdfService.gerarOsPdf(dados, fotosComConteudo);
     const pdfStorageKey = crypto.randomUUID();
+    const objectKey = `empresas/${usuario.empresa_id}/pdf/${pdfStorageKey}.pdf`;
+    const externo = await ObjectStorage.salvar(objectKey, pdfConteudo, 'application/pdf');
     const baseUrl =
       process.env.APP_URL ||
       (process.env.RENDER_EXTERNAL_HOSTNAME
@@ -410,10 +434,10 @@ async function _gerarEPersistirPdf(id, usuario, req) {
         : `${req.protocol}://${req.get('host')}`);
     const pdfUrl = `${baseUrl}/arquivos/ordens/${pdfStorageKey}.pdf`;
 
-    await db.query(
+    try { await db.query(
       'UPDATE ordens_servico SET pdf_url=$1,pdf_storage_key=$2,pdf_conteudo=$3 WHERE id=$4 AND empresa_id=$5',
-      [pdfUrl, pdfStorageKey, pdfConteudo, id, usuario.empresa_id],
-    );
+      [pdfUrl, pdfStorageKey, externo ? null : pdfConteudo, id, usuario.empresa_id],
+    ); } catch (error) { if (externo) await ObjectStorage.remover(objectKey).catch(() => {}); throw error; }
 
     if (dados.telefone_whatsapp && WhatsAppService.configurado()) {
       void WhatsAppService.enviarPdfOs(dados.telefone_whatsapp, dados.cliente_nome, pdfUrl);

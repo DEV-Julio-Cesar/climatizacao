@@ -7,6 +7,7 @@ import SignatureScreen from 'react-native-signature-canvas';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import * as Crypto from 'expo-crypto';
 import { api } from '../../services/api';
 import { colors, shadow } from '../../styles/theme';
 import { enfileirar } from '../../database/sqlite';
@@ -16,110 +17,6 @@ export default function AssinaturaOS({ route, navigation }) {
   const signature = useRef();
   const [loading, setLoading] = useState(false);
 
-  const finalizar = async (dataUrl) => {
-    // ── 1. Solicitar GPS antes de mostrar loading ────────────────────────────
-    // Fazemos o guard de permissão FORA do try/finally para evitar que
-    // setLoading(true) seja chamado sem o correspondente setLoading(false).
-    const permissao = await Location.requestForegroundPermissionsAsync();
-    if (permissao.status !== 'granted') {
-      Alert.alert(
-        'Localização necessária',
-        'Autorize o acesso à localização para registrar o check-out com GPS.',
-      );
-      return; // sai antes de setLoading — sem efeito colateral
-    }
-
-    setLoading(true);
-    let path;
-
-    try {
-      // ── 2. Capturar posição ────────────────────────────────────────────────
-      const posicao = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      // ── 3. Persistir assinatura localmente ────────────────────────────────
-      path = `${FileSystem.cacheDirectory}assinatura_${os_id}_${Date.now()}.png`;
-      await FileSystem.writeAsStringAsync(
-        path,
-        dataUrl.replace(/^data:image\/png;base64,/, ''),
-        { encoding: FileSystem.EncodingType.Base64 },
-      );
-
-      // ── 4. Upload + checkout + finalização ────────────────────────────────
-      await api.uploadFoto(
-        os_id,
-        'ASSINATURA',
-        { uri: path, name: `assinatura_${os_id}.png`, type: 'image/png' },
-      );
-      await api.chamadaAutenticada(`/os/${os_id}/eventos`, 'POST', {
-        evento: 'CHECKOUT',
-        latitude: posicao.coords.latitude,
-        longitude: posicao.coords.longitude,
-      });
-      const resposta = await api.chamadaAutenticada(
-        `/os/${os_id}/status`,
-        'PATCH',
-        { novo_status: 'FINALIZADA' },
-      );
-
-      Alert.alert(
-        'O.S. finalizada',
-        resposta.pdf_url
-          ? 'Assinatura salva e PDF gerado com sucesso.'
-          : 'Assinatura salva com sucesso.',
-        [{ text: 'Voltar à agenda', onPress: () => navigation.popToTop() }],
-      );
-    } catch (error) {
-      // ── Fallback offline ─────────────────────────────────────────────────
-      // Só enfileira offline quando não há status HTTP (erro de rede pura)
-      // e quando já temos o path do arquivo e a posição GPS.
-      const erroDeRede = !error.status;
-      const posicaoCapturada = error._posicao; // veja nota abaixo
-
-      if (erroDeRede && path) {
-        try {
-          const uri = `${FileSystem.documentDirectory}assinatura_${os_id}_${Date.now()}.png`;
-          await FileSystem.copyAsync({ from: path, to: uri });
-          await enfileirar('FOTO_OS', {
-            os_id,
-            tipo: 'ASSINATURA',
-            uri,
-            nome: `assinatura_${os_id}.png`,
-            mime: 'image/png',
-          });
-          await enfileirar('EVENTO_OS', {
-            os_id,
-            dados: {
-              evento: 'CHECKOUT',
-              // Se não temos a posição, usamos undefined — o servidor rejeitará
-              // e o item ficará marcado como falha permanente (4xx) na fila.
-              latitude: posicaoCapturada?.coords.latitude,
-              longitude: posicaoCapturada?.coords.longitude,
-            },
-          });
-          await enfileirar('STATUS_OS', { os_id, novo_status: 'FINALIZADA' });
-
-          Alert.alert(
-            'Finalização salva offline',
-            'Assinatura e check-out serão sincronizados quando a conexão voltar.',
-            [{ text: 'Voltar à agenda', onPress: () => navigation.popToTop() }],
-          );
-          return; // sai sem relançar
-        } catch {
-          // falha no enfileiramento — mostra erro original
-        }
-      }
-
-      Alert.alert('Não foi possível finalizar', error.message);
-    } finally {
-      // ── Garante que loading sempre seja desmarcado ───────────────────────
-      setLoading(false);
-    }
-  };
-
-  // Wrapper que captura posição e injeta no erro para o fallback offline
-  // (padrão necessário porque precisamos da posição dentro do catch)
   const finalizarComPosicao = async (dataUrl) => {
     let posicao;
     try {
@@ -141,6 +38,7 @@ export default function AssinaturaOS({ route, navigation }) {
 
     setLoading(true);
     let path;
+    const operacaoId = Crypto.randomUUID();
 
     try {
       path = `${FileSystem.cacheDirectory}assinatura_${os_id}_${Date.now()}.png`;
@@ -154,6 +52,7 @@ export default function AssinaturaOS({ route, navigation }) {
         os_id,
         'ASSINATURA',
         { uri: path, name: `assinatura_${os_id}.png`, type: 'image/png' },
+        { client_uuid: operacaoId },
       );
       await api.chamadaAutenticada(`/os/${os_id}/eventos`, 'POST', {
         evento: 'CHECKOUT',
@@ -181,7 +80,7 @@ export default function AssinaturaOS({ route, navigation }) {
           await enfileirar('FOTO_OS', {
             os_id, tipo: 'ASSINATURA', uri,
             nome: `assinatura_${os_id}.png`, mime: 'image/png',
-          });
+          }, operacaoId);
           await enfileirar('EVENTO_OS', {
             os_id,
             dados: {

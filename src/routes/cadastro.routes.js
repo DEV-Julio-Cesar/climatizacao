@@ -11,6 +11,7 @@ router.use(authMiddleware);
 router.get('/tecnicos', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarTecnicos);
 router.get('/enderecos/cep/:cep', permitir('CLIENTES_VISUALIZAR'), EnderecoController.buscarCep);
 router.get('/clientes', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarClientes);
+router.get('/clientes/:id/ordens', permitir('CLIENTES_VISUALIZAR'), CadastroController.listarOrdensCliente);
 router.get('/clientes/:id', permitir('CLIENTES_VISUALIZAR'), CadastroController.detalheCliente);
 router.post('/clientes', permitir('CLIENTES_GERENCIAR'), validarCliente, CadastroController.criarCliente);
 router.patch('/clientes/:id', permitir('CLIENTES_GERENCIAR'), validarCliente, CadastroController.atualizarCliente);

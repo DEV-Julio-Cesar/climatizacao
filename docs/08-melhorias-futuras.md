@@ -4,6 +4,37 @@ Consolidação de todas as melhorias identificadas para o sistema.
 Itens do mobile também estão em [05-mobile.md](./05-mobile.md).  
 Itens do web também estão em [06-web.md](./06-web.md).
 
+## Estado auditado — 31/10/2026
+
+Esta seção é a fonte de verdade para execução. As tabelas históricas abaixo
+continuam registrando o escopo original, mas podem descrever itens já entregues.
+
+| Frente | Estado | Evidência / próximo critério de aceite |
+|---|---|---|
+| Backlog e documentação | ✅ Concluído | Estado reconciliado com o código e CI existente |
+| Instalação, testes e CI | ✅ Concluído | `npm install`, 44/44 testes da API e build Vite aprovados; CI executa API, web e export Expo |
+| Sessões persistidas e rotação | ✅ Concluído | Tabela `sessoes`, hash do refresh, rotação atômica e revogação por sessão |
+| Cookie HttpOnly no painel | ✅ Concluído | Login web não recebe refresh no JSON; refresh e logout usam cookie `HttpOnly; SameSite=Strict` |
+| Testes da sincronização offline/finalização | ✅ Concluído | FIFO, falhas, limite, assinatura, checkout e status final idempotentes e retomáveis |
+| Refatoração das páginas web grandes | ✅ Concluído | Componentes, utilitários e dados separados em `Clientes`, `Suprimentos` e `PainelDespacho` |
+| Paginação e cache web | ✅ Concluído | Clientes usam cursor/infinite query; despacho usa cache e invalidação com TanStack Query |
+| SSE | ✅ Concluído | Stream autenticado multiempresa, heartbeat e reconexão atualizam WhatsApp e despacho sem polling |
+| S3/R2 | ✅ Concluído | Provider S3/R2 opcional, fallback BYTEA, leitura retrocompatível e compensação em falha de banco |
+| Paginação de O.S. | ✅ Concluído | Cursor, filtros validados e consumidores web sem consultas ilimitadas |
+| Históricos paginados | ✅ Concluído | O.S. finalizadas e atendimentos por cliente usam cursor e carregamento incremental |
+| Exportações, inadimplência, lembretes e PIX | 🚧 Parcial | CSV, inadimplência e lembrete WhatsApp entregues; PIX em implementação |
+| Tema escuro e acessibilidade | 🚧 Parcial | Infraestrutura mobile existe; faltam telas e auditoria de acessibilidade |
+
+### Itens já entregues que permaneciam marcados como futuros
+
+- **B2**: a revogação é persistida em PostgreSQL por sessão; Redis não é
+  necessário para a escala atual.
+- **B17**: existem 44 testes automatizados de API, migração e recuperação de senha.
+- **M2**: lembretes locais de agenda já são sincronizados pelo app.
+- **M15**: o scheme `climasaas` já está configurado em `app.config.js`.
+- **W1/W2**: cookie HttpOnly e refresh automático estão implementados.
+- O modo escuro mobile está em migração gradual, portanto **M1** está parcial.
+
 ---
 
 ## Legenda de Prioridade
@@ -29,7 +60,7 @@ Itens do web também estão em [06-web.md](./06-web.md).
 | B5 | 🟡 | Multi-tenant WhatsApp completo | `WHATSAPP_EMPRESA_ID` hardcoded limita a uma empresa por instância. Criar tabela `empresas_whatsapp(numero, empresa_id)` para roteamento correto. |
 | B6 | 🟡 | Job de alertas de estoque mínimo | Quando `estoque < estoque_minimo`, nenhuma notificação automática é gerada. Implementar um cron job (ex.: `node-cron`) que roda a cada hora e insere notificações na tabela `notificacoes`. |
 | B7 | 🟡 | Job de contratos a vencer | Similar ao anterior: verificar `contratos.proxima_visita` e notificar gestores automaticamente. |
-| B8 | 🟢 | Paginação cursor-based em `/os/todas` | `listarTodas()` retorna todas as OS sem limite. Para empresas com volume alto, implementar `cursor` + `limit` no backend e infinite scroll no frontend. |
+| B8 | ✅ | Paginação cursor-based em `/os/todas` | Entregue com `cursor`, `limit`, filtros de status/busca e carregamento paginado no despacho e suprimentos. |
 | B9 | 🟢 | Migrar logs para serviço externo | Logger atual emite JSON para stdout. Integrar com Datadog, Logtail ou AWS CloudWatch para alertas automáticos em erros 5xx. |
 
 ### Funcionalidades
@@ -38,7 +69,7 @@ Itens do web também estão em [06-web.md](./06-web.md).
 |---|---|---|---|
 | B10 | 🔴 | Bot WhatsApp com agendamento automático | O bot atual só triagem básica. Implementar fluxo completo: cliente informa problema → bot sugere data disponível → confirma → cria OS automaticamente. |
 | B11 | 🟡 | API de relatórios configuráveis | Hoje o dashboard tem KPIs fixos. Permitir que o gestor selecione período, técnico, tipo de serviço nos filtros da API de relatórios. |
-| B12 | 🟡 | Endpoint de exportação CSV | `GET /relatorios/exportar?formato=csv` para OS, pagamentos, movimentações de estoque. |
+| B12 | ✅ | Endpoint de exportação CSV | Entregue para OS, pagamentos e movimentações, com filtros, isolamento por empresa e proteção contra fórmulas. |
 | B13 | 🟡 | Webhook de saída (outbound) | Ao finalizar OS, notificar sistemas externos (ERP, CRM) via webhook configurável por empresa. |
 | B14 | 🟡 | Integração PIX (geração de QR Code) | Gerar QR Code PIX estático/dinâmico para cobranças (`pixqrcode` ou API do Banco Central). Enviar ao cliente por WhatsApp. |
 | B15 | 🟢 | Módulo de relatório fiscal (NF-se) | Emissão de Nota Fiscal de Serviço Eletrônica integrada à prefeitura local. Necessita integração com provedor (e.g. FocusNFe, eNotas). |
@@ -85,10 +116,10 @@ Itens do web também estão em [06-web.md](./06-web.md).
 | W1 | 🔴 | Token em HttpOnly Cookie | Elimina exposição a XSS; requer `POST /auth/logout` na API |
 | W2 | 🔴 | Refresh token no web | Renovação automática no interceptor Axios (como o mobile faz) |
 | W3 | 🔴 | Notificações em tempo real (SSE) | Substituir polling do WhatsApp e atualizar despacho em tempo real |
-| W4 | 🟡 | Exportação de relatórios CSV/Excel | Botão de download no Dashboard e Relatórios |
+| W4 | ✅ | Exportação de relatórios CSV/Excel | Downloads de OS, pagamentos e estoque no Dashboard |
 | W5 | 🟡 | Drag-and-drop no mapa | Arrastar OS entre técnicos em `MapaEquipe` |
-| W6 | 🟡 | Lembrete WhatsApp de agendamento | Botão no PainelDespacho para enviar template de lembrete |
-| W7 | 🟡 | Relatório de inadimplência | OS finalizadas com saldo pendente + botão de cobrança WhatsApp |
+| W6 | ✅ | Lembrete WhatsApp de agendamento | Botão no PainelDespacho com template Meta configurável |
+| W7 | ✅ | Relatório de inadimplência | OS finalizadas com saldo pendente, resumo e tempo em aberto |
 | W8 | 🟡 | Responsividade para tablet | Breakpoints e layout adaptativo |
 | W9 | 🟡 | Foto interativa com lightbox | Galeria de fotos com zoom no detalhe de OS |
 | W10 | 🟡 | Dashboard personalizável | Gestor escolhe widgets e ordem |
@@ -107,14 +138,14 @@ Itens do web também estão em [06-web.md](./06-web.md).
 
 ### O que fazer primeiro (maior impacto, menor esforço)
 
-1. **W2** — Refresh token no web: evita logout surpresa a cada 8h (1 dia de trabalho)
-2. **B6 + B7** — Jobs de notificação automática de estoque e contratos (1-2 dias)
-3. **M2** — Notificações locais de agendamento (1 dia, expo-notifications já está no projeto)
-4. **W3** — SSE para WhatsApp (elimina polling ineficiente)
-5. **M1** — Modo escuro (centralizado no theme.js, impacto visual grande)
+1. Testes da sincronização offline e da finalização de OS
+2. Refatoração segura das três maiores páginas web
+3. Paginação por cursor e cache de consultas
+4. SSE para WhatsApp e despacho
+5. Migração gradual de fotos e PDFs para armazenamento de objetos
 
 ### O que evitar adiar por muito tempo
 
 1. **B1** — Migração de BYTEA para S3: quanto mais fotos acumulam no banco, mais caro e lento fica a migração futura
-2. **W1** — Cookie HttpOnly: risco de segurança real enquanto o token estiver em localStorage
-3. **B17** — Testes de integração: a ausência de testes torna cada refatoração arriscada
+2. Testes mobile: a fila offline ainda não possui cobertura automatizada suficiente
+3. Paginação: listagens sem limite aumentam custo e tempo de resposta com o crescimento

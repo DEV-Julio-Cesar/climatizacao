@@ -2,24 +2,7 @@ import * as Network from 'expo-network';
 import { listarFila, registrarFalha, removerFila, descartar } from '../database/sqlite';
 import { api } from './api';
 import * as FileSystem from 'expo-file-system/legacy';
-
-/**
- * Número máximo de tentativas antes de descartar um item da fila.
- * Evita que operações com erro permanente (OS deletada, dados inválidos)
- * fiquem presas para sempre no dispositivo do técnico.
- */
-const MAX_TENTATIVAS = 5;
-
-/**
- * Verifica se o erro recebido indica que o servidor já processou essa operação.
- * Códigos 200 e 409 com mensagem "já sincronizado" são considerados idempotentes:
- * o item pode ser removido da fila sem reenvio.
- */
-function jaProcessado(error) {
-  if (!error.status) return false;
-  if (error.status === 409 && /já sincronizado|já existe|duplicate/i.test(error.message || '')) return true;
-  return false;
-}
+const { processarFila } = require('./syncPolicy.cjs');
 
 /**
  * Tenta sincronizar os itens pendentes na fila offline.
@@ -41,51 +24,14 @@ export async function tentarSincronizarOffline(itemId = null) {
   const rede = await Network.getNetworkStateAsync();
   if (!rede.isConnected || rede.isInternetReachable === false) return { enviados: 0 };
 
-  let enviados = 0;
   const fila = await listarFila();
   const itens = itemId === null ? fila : fila.filter((v) => v.id === itemId);
-
-  for (const item of itens) {
-    try {
-      const payload = JSON.parse(item.payload);
-      // _client_uuid é injetado por enfileirar() para identificar a operação
-      const clientUuid = payload._client_uuid || item.client_uuid || null;
-
-      await _despachar(item.tipo, payload, clientUuid);
-
-      await removerFila(item.id);
-      enviados += 1;
-    } catch (error) {
-      if (jaProcessado(error)) {
-        // Servidor já processou — pode remover sem contar como enviado agora
-        await removerFila(item.id);
-        enviados += 1;
-        continue;
-      }
-
-      await registrarFalha(item.id, error.message);
-
-      // Bug 2 — descartar itens que excederam o limite de tentativas.
-      // Itens com erro permanente (OS removida, dados inválidos) não devem
-      // ficar presos na fila para sempre; após MAX_TENTATIVAS são descartados.
-      const tentativasAtuais = (item.tentativas || 0) + 1;
-      if (tentativasAtuais >= MAX_TENTATIVAS) {
-        await descartar(item.id);
-        continue;
-      }
-
-      if (error.status && error.status >= 400 && error.status < 500) {
-        // Erro permanente do cliente (dados inválidos, acesso negado etc.)
-        // → marca e segue para o próximo item
-        continue;
-      }
-
-      // Erro de rede ou 5xx → interrompe para não marttelar o servidor
-      break;
-    }
-  }
-
-  return { enviados };
+  return processarFila(itens, {
+    despachar: _despachar,
+    remover: removerFila,
+    registrarFalha,
+    descartar,
+  });
 }
 
 /**

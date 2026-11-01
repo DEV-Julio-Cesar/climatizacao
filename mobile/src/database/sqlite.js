@@ -49,10 +49,10 @@ export async function initDB() {
  * evitando que o índice único (tipo, client_uuid WHERE client_uuid != '')
  * seja bypassado e permita duplicatas na fila.
  */
-export async function enfileirar(tipo, payload) {
-  let uuid;
+export async function enfileirar(tipo, payload, clientUuid = null) {
+  let uuid = clientUuid;
   try {
-    uuid = await Crypto.randomUUID();
+    if (!uuid) uuid = await Crypto.randomUUID();
   } catch {
     // Fallback: combina timestamp com Math.random para gerar uuid único
     uuid = `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;

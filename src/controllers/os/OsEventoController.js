@@ -2,6 +2,7 @@ const db = require('../../config/database');
 const OsModel = require('../../models/OsModel');
 const PushService = require('../../services/PushService');
 const validarConflito = require('./validarConflito');
+const RealtimeService = require('../../services/RealtimeService');
 
 const gestor = (perfil) => ['GESTOR', 'ADMIN'].includes(perfil);
 
@@ -25,6 +26,10 @@ class OsEventoController {
           throw Object.assign(new Error('Acesso negado.'), { status: 403 });
 
         const { evento, latitude, longitude, motivo } = req.body;
+
+        // Retomada segura: a resposta do primeiro checkout pode ter se perdido.
+        // Nesse caso a repetição confirma o estado já persistido sem novo histórico.
+        if (evento === 'CHECKOUT' && os.checkout_em) return os;
 
         if (evento === 'A_CAMINHO' && os.status !== 'ABERTA')
           throw Object.assign(new Error('A O.S. precisa estar aberta.'), { status: 409 });
@@ -102,6 +107,7 @@ class OsEventoController {
         return result.rows[0];
       });
 
+      RealtimeService.publicar(usuario.empresa_id, 'os', { os_id:id, acao:'evento', evento:req.body.evento });
       return res.json({ mensagem: 'Evento registrado.', os: atualizada });
     } catch (error) {
       return res
@@ -245,6 +251,7 @@ class OsEventoController {
         { os_id: id },
       );
 
+      RealtimeService.publicar(usuario.empresa_id, 'os', { os_id:id, acao:'agendada' });
       return res.json({ mensagem: 'Visita agendada.', os: atualizada });
     } catch (e) {
       return res

@@ -1,21 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  MapContainer,
-  Marker,
-  TileLayer,
-  useMap,
-  useMapEvents,
-} from "react-leaflet";
-import L from "leaflet";
+import React, { useMemo, useState } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+import { digitos, documentoValido, enderecoCompleto, label, mascaraCep, mascaraDocumento,
+  mascaraTelefone, money, numOrNull, pick, temCoordenadas } from "./clientesUtils";
+import { Actions, Field, LocationPicker, Modal } from "./ClientesComponents";
 
 const clienteVazio = {
   nome: "",
@@ -58,35 +46,33 @@ const podeGerenciar = () => {
 };
 
 export default function Clientes() {
-  const [items, setItems] = useState([]),
-    [search, setSearch] = useState(""),
+  const [search, setSearch] = useState(""),
     [selected, setSelected] = useState(null),
     [clientForm, setClientForm] = useState(null),
     [equipmentForm, setEquipmentForm] = useState(null),
-    [alertas, setAlertas] = useState([]),
     [qr, setQr] = useState(null),
     [error, setError] = useState(""),
     [msg, setMsg] = useState(""),
-    [loading, setLoading] = useState(true),
     [buscandoCep, setBuscandoCep] = useState(false),
     [saving, setSaving] = useState(false);
   const manage = podeGerenciar();
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [r, a] = await Promise.all([api.get("/clientes"), api.get("/equipamentos-alertas")]);
-      setItems(r.data); setAlertas(a.data);
-    } catch (e) {
-      setError(
-        e.response?.data?.erro || "Não foi possível carregar os clientes.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
+  const queryClient = useQueryClient();
+  const clientesQuery = useInfiniteQuery({
+    queryKey:["clientes"], initialPageParam:null,
+    queryFn:async({pageParam}) => (await api.get("/clientes",{params:{limit:50,...(pageParam?{cursor:pageParam}:{})}})).data,
+    getNextPageParam:ultima => ultima.next_cursor || undefined,
+  });
+  const alertasQuery = useQuery({ queryKey:["equipamentos-alertas"], queryFn:async() => (await api.get("/equipamentos-alertas")).data });
+  const historicoQuery = useInfiniteQuery({
+    queryKey:["cliente-ordens", selected?.id], enabled:Boolean(selected?.id), initialPageParam:null,
+    queryFn:async({pageParam}) => (await api.get(`/clientes/${selected.id}/ordens`,{params:{limit:20,...(pageParam?{cursor:pageParam}:{})}})).data,
+    getNextPageParam:ultima => ultima.next_cursor || undefined,
+  });
+  const items = clientesQuery.data?.pages.flatMap(pagina => pagina.items) || [];
+  const historico = historicoQuery.data?.pages.flatMap(pagina => pagina.items) || [];
+  const alertas = alertasQuery.data || [];
+  const queryError = clientesQuery.error?.response?.data?.erro || alertasQuery.error?.response?.data?.erro || "";
+  const atualizarListas = async () => queryClient.invalidateQueries({ queryKey:["clientes"] });
   const open = async (id) => {
     try {
       setSelected((await api.get(`/clientes/${id}`)).data);
@@ -147,7 +133,7 @@ export default function Clientes() {
         : await api.post("/clientes", payload);
       setClientForm(null);
       setMsg("Cliente e endereço salvos com sucesso.");
-      await load();
+      await atualizarListas();
     } catch (x) {
       const d = x.response?.data;
       setError(
@@ -181,7 +167,7 @@ export default function Clientes() {
         : await api.post("/equipamentos", payload);
       setEquipmentForm(null);
       setMsg("Equipamento salvo com sucesso.");
-      await load();
+      await atualizarListas();
       if (selected) await open(selected.id);
     } catch (x) {
       setError(x.response?.data?.erro || "Falha ao salvar equipamento.");
@@ -198,12 +184,12 @@ export default function Clientes() {
       await api.delete(`/${type}/${id}`);
       setSelected(null);
       setMsg("Cadastro inativado.");
-      await load();
+      await atualizarListas();
     } catch (x) {
       setError(x.response?.data?.erro || x.message);
     }
   };
-  if (loading) return <div className="loading">Carregando clientes...</div>;
+  if (clientesQuery.isLoading || alertasQuery.isLoading) return <div className="loading">Carregando clientes...</div>;
   return (
     <>
       <section className="panel">
@@ -229,10 +215,10 @@ export default function Clientes() {
             )}
           </div>
         </div>
-        {error && (
+        {(error || queryError) && (
           <div className="alert">
-            {error}
-            <button onClick={() => setError("")}>×</button>
+            {error || queryError}
+            <button onClick={() => { setError(""); clientesQuery.refetch(); alertasQuery.refetch(); }}>Tentar novamente</button>
           </div>
         )}
         {alertas.length > 0 && <div className="equipment-alerts"><div><b>{alertas.length} equipamento(s) precisam de atenção</b><small>Manutenções próximas, atrasadas ou garantias vencendo.</small></div>{alertas.slice(0,3).map(a=><button key={a.id} onClick={()=>open(items.find(c=>c.nome===a.cliente_nome)?.id)}><span>{a.cliente_nome} · {[a.marca,a.modelo,a.ambiente].filter(Boolean).join(" ")}</span><b>{label(a.alerta)}</b></button>)}</div>}
@@ -270,6 +256,10 @@ export default function Clientes() {
         {!filtered.length && (
           <div className="empty">Nenhum cliente encontrado.</div>
         )}
+        {clientesQuery.hasNextPage && <button disabled={clientesQuery.isFetchingNextPage}
+          onClick={() => clientesQuery.fetchNextPage()}>
+          {clientesQuery.isFetchingNextPage ? "Carregando..." : "Carregar mais clientes"}
+        </button>}
       </section>
       {selected && (
         <div
@@ -383,7 +373,7 @@ export default function Clientes() {
               <p className="empty compact">Nenhum equipamento.</p>
             )}
             <h3>Histórico de atendimentos</h3>
-            {selected.ordens.length ? (
+            {historicoQuery.isLoading ? <p className="empty compact">Carregando atendimentos...</p> : historico.length ? (
               <div className="table-scroll">
                 <table>
                   <thead>
@@ -396,9 +386,9 @@ export default function Clientes() {
                     </tr>
                   </thead>
                   <tbody>
-                    {selected.ordens.map((o) => (
+                    {historico.map((o) => (
                       <tr key={o.id}>
-                        <td>#{o.id}</td>
+                        <td>{o.numero || `#${o.id}`}</td>
                         <td>{label(o.tipo_servico)}</td>
                         <td>{o.tecnico_nome}</td>
                         <td>{label(o.status)}</td>
@@ -411,6 +401,10 @@ export default function Clientes() {
             ) : (
               <p className="empty compact">Nenhum atendimento.</p>
             )}
+            {historicoQuery.hasNextPage && <button disabled={historicoQuery.isFetchingNextPage}
+              onClick={() => historicoQuery.fetchNextPage()}>
+              {historicoQuery.isFetchingNextPage ? "Carregando..." : "Carregar mais atendimentos"}
+            </button>}
             {manage && (
               <button
                 className="danger-button wide"
@@ -617,179 +611,4 @@ export default function Clientes() {
       {msg && <div className="toast">{msg}</div>}
     </>
   );
-}
-
-function LocationPicker({ form, setForm }) {
-  const position = temCoordenadas(form)
-    ? [Number(form.latitude), Number(form.longitude)]
-    : [-14.235, -51.9253];
-  const zoom = temCoordenadas(form) ? 16 : 4;
-  return (
-    <div className="address-map">
-      <MapContainer center={position} zoom={zoom} scrollWheelZoom>
-        <TileLayer
-          attribution="© OpenStreetMap"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <MapSync position={position} zoom={zoom} />
-        <MapClick
-          onChange={(lat, lng) =>
-            setForm((f) => ({ ...f, latitude: lat, longitude: lng }))
-          }
-        />
-        {temCoordenadas(form) && <Marker position={position} />}
-      </MapContainer>
-    </div>
-  );
-}
-function MapSync({ position, zoom }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(position, zoom);
-  }, [map, position[0], position[1], zoom]);
-  return null;
-}
-function MapClick({ onChange }) {
-  useMapEvents({
-    click: (e) =>
-      onChange(
-        Number(e.latlng.lat.toFixed(7)),
-        Number(e.latlng.lng.toFixed(7)),
-      ),
-  });
-  return null;
-}
-function Modal({ title, close, children, wide }) {
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && close()}
-    >
-      <section className={`form-modal ${wide ? "client-form-modal" : ""}`}>
-        <div className="modal-title">
-          <h2>{title}</h2>
-          <button onClick={close}>×</button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
-function Field({
-  label,
-  name,
-  form,
-  set,
-  type = "text",
-  valueFormatter,
-  ...rest
-}) {
-  return (
-    <div>
-      <label>{label}</label>
-      <input
-        {...rest}
-        type={type}
-        value={valueFormatter ? valueFormatter(form[name]) : (form[name] ?? "")}
-        onChange={(e) =>
-          set({
-            ...form,
-            [name]: valueFormatter
-              ? valueFormatter(e.target.value)
-              : e.target.value,
-          })
-        }
-      />
-    </div>
-  );
-}
-function Actions({ close, saving }) {
-  return (
-    <div className="modal-actions">
-      <button type="button" onClick={close}>
-        Cancelar
-      </button>
-      <button className="primary" disabled={saving}>
-        {saving ? "Salvando..." : "Salvar"}
-      </button>
-    </div>
-  );
-}
-function pick(data, shape) {
-  return {
-    id: data.id,
-    ...Object.fromEntries(
-      Object.keys(shape).map((k) => [k, data[k] ?? shape[k]]),
-    ),
-  };
-}
-function numOrNull(v) {
-  return v === "" || v === null || !Number.isFinite(Number(v))
-    ? null
-    : Number(v);
-}
-function digitos(v) {
-  return String(v || "").replace(/\D/g, "");
-}
-function mascaraCep(v) {
-  const n = digitos(v).slice(0, 8);
-  return n.replace(/(\d{5})(\d)/, "$1-$2");
-}
-function mascaraTelefone(v) {
-  const n = digitos(v).slice(0, 13);
-  const br = n.startsWith("55") && n.length > 11 ? n.slice(2) : n;
-  return br.length > 10
-    ? br.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-    : br.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
-}
-function mascaraDocumento(v) {
-  const n = digitos(v).slice(0, 14);
-  return n.length <= 11
-    ? n
-        .replace(/(\d{3})(\d)/, "$1.$2")
-        .replace(/(\d{3})(\d)/, "$1.$2")
-        .replace(/(\d{3})(\d{1,2})$/, "$1-$2")
-    : n
-        .replace(/(\d{2})(\d)/, "$1.$2")
-        .replace(/(\d{3})(\d)/, "$1.$2")
-        .replace(/(\d{3})(\d)/, "$1/$2")
-        .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
-}
-function documentoValido(v) {
-  const n = digitos(v);
-  if (!n) return true;
-  if (![11, 14].includes(n.length) || /^(\d)\1+$/.test(n)) return false;
-  const d = (base, p) => {
-    const r = base.split("").reduce((s, x, i) => s + Number(x) * p[i], 0) % 11;
-    return r < 2 ? 0 : 11 - r;
-  };
-  if (n.length === 11) {
-    const a = d(n.slice(0, 9), [10, 9, 8, 7, 6, 5, 4, 3, 2]),
-      b = d(n.slice(0, 9) + a, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
-    return n.endsWith(`${a}${b}`);
-  }
-  const a = d(n.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]),
-    b = d(n.slice(0, 12) + a, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
-  return n.endsWith(`${a}${b}`);
-}
-function enderecoCompleto(c) {
-  const linha = [c.endereco, c.numero].filter(Boolean).join(", ");
-  return [linha, c.complemento, c.bairro, c.cidade, c.estado]
-    .filter(Boolean)
-    .join(" · ");
-}
-function temCoordenadas(v) {
-  return (
-    Number.isFinite(Number(v?.latitude)) &&
-    Number.isFinite(Number(v?.longitude))
-  );
-}
-function money(v) {
-  return Number(v || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-function label(v) {
-  return String(v || "").replaceAll("_", " ");
 }

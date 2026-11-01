@@ -364,7 +364,7 @@ ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7);
 ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
 ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS capturada_em TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(80);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_os_fotos_client_uuid ON os_fotos(client_uuid) WHERE client_uuid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_os_fotos_client_uuid_lookup ON os_fotos(client_uuid) WHERE client_uuid IS NOT NULL;
 
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS pausado_em TIMESTAMPTZ;
 ALTER TABLE ordens_servico ADD COLUMN IF NOT EXISTS total_pausa_segundos INTEGER NOT NULL DEFAULT 0;

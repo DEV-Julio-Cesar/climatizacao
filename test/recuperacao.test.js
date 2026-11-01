@@ -45,7 +45,8 @@ test('redefinição usa token uma vez, troca senha e revoga sessões em transaç
   const banco=bancoTeste();await service.solicitar('ana@example.com',banco.executor);const token=tokenDoEmail(banco);
   const resultados=await Promise.allSettled([service.redefinir(token,'SenhaNova123',banco.executor),service.redefinir(token,'OutraSenha123',banco.executor)]);
   assert.equal(resultados.filter(r=>r.status==='fulfilled').length,1);assert.equal(resultados.find(r=>r.status==='rejected').reason.status,400);
-  assert.equal(await bcrypt.compare('SenhaNova123',banco.dados.senha),true);assert.equal(banco.dados.sessoesAtivas,false);assert.equal(banco.dados.emails[0].conteudo_cifrado,'');
+  const senhaVencedora=resultados[0].status==='fulfilled'?'SenhaNova123':'OutraSenha123';
+  assert.equal(await bcrypt.compare(senhaVencedora,banco.dados.senha),true);assert.equal(banco.dados.sessoesAtivas,false);assert.equal(banco.dados.emails[0].conteudo_cifrado,'');
 });
 
 test('link expirado é rejeitado e novo pedido invalida o anterior',async()=>{

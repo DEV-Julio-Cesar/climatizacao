@@ -3,6 +3,7 @@ const auth=require('../middlewares/authMiddleware');
 const perfil=require('../middlewares/perfilMiddleware');
 const permitir=require('../middlewares/permissaoMiddleware');
 const controller=require('../controllers/GestaoController');
+const relatorios=require('../controllers/RelatorioController');
 const router=express.Router();
 router.use(auth);
 router.get('/notificacoes',controller.notificacoes);
@@ -12,6 +13,8 @@ router.get('/contratos',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),c
 router.post('/contratos',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.criarContrato);
 router.post('/contratos/:id/gerar-visita',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.gerarVisita);
 router.get('/relatorios/gerencial',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),controller.relatorio);
+router.get('/relatorios/exportar',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),relatorios.exportar);
+router.get('/relatorios/inadimplencia',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),relatorios.inadimplencia);
 router.get('/agenda/gestao',perfil('GESTOR','ADMIN'),permitir('GESTAO_VISUALIZAR'),controller.agenda);
 router.get('/configuracoes/permissoes',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.listarPermissoes);
 router.get('/configuracoes/tecnicos',perfil('GESTOR','ADMIN'),permitir('GESTAO_GERENCIAR'),controller.listarTecnicos);

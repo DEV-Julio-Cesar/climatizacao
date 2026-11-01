@@ -89,6 +89,22 @@ class WhatsAppService {
   }
 
   // Formata o número para o padrão internacional sem '+' (ex: 5511999998888)
+  async enviarLembreteAgendamento(telefone, dados) {
+    const instante = new Date(dados.agendamento);
+    const data = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(instante);
+    const hora = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(instante);
+    const payload = {
+      messaging_product: 'whatsapp', to: this._formatarNumero(telefone), type: 'template',
+      template: {
+        name: process.env.WHATSAPP_TEMPLATE_LEMBRETE || 'lembrete_agendamento',
+        language: { code: process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'pt_BR' },
+        components: [{ type: 'body', parameters: [dados.cliente, String(dados.ordem), data, hora, dados.tecnico].map((text) => ({ type: 'text', text })) }],
+      },
+    };
+    try { return (await axios.post(this.apiUrl, payload, { headers: this.headers })).data; }
+    catch (error) { throw new Error(error.response?.data?.error?.message || 'A Meta recusou o template de lembrete.'); }
+  }
+
   _formatarNumero(telefone) {
     let apenasDigitos = String(telefone || '').replace(/\D/g, '');
     if (!apenasDigitos.startsWith('55')) apenasDigitos = `55${apenasDigitos}`;

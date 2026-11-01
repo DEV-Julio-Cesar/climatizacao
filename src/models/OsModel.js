@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const ArquivoUrlService = require("../services/ArquivoUrlService");
 
 class OsModel {
   async validarRelacionamentos(
@@ -58,10 +59,17 @@ class OsModel {
 
   async buscarDetalhes(id, empresaId) {
     const principal = await db.query(
-      `SELECT os.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.endereco AS cliente_endereco,
-              c.cep AS cliente_cep, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
-              c.latitude, c.longitude, u.nome AS tecnico_nome, a.marca AS aparelho_marca,
-              a.modelo AS aparelho_modelo, a.capacidade AS aparelho_capacidade
+      `SELECT os.*, COALESCE(os.cliente_snapshot->>'nome',c.nome) AS cliente_nome,
+              COALESCE(os.cliente_snapshot->>'telefone',c.telefone) AS cliente_telefone,
+              COALESCE(os.endereco_execucao_snapshot->>'endereco',c.endereco) AS cliente_endereco,
+              COALESCE(os.endereco_execucao_snapshot->>'cep',c.cep) AS cliente_cep,
+              COALESCE(os.endereco_execucao_snapshot->>'cidade',c.cidade) AS cliente_cidade,
+              COALESCE(os.endereco_execucao_snapshot->>'estado',c.estado) AS cliente_estado,
+              COALESCE((os.endereco_execucao_snapshot->>'latitude')::numeric,c.latitude) AS latitude,
+              COALESCE((os.endereco_execucao_snapshot->>'longitude')::numeric,c.longitude) AS longitude,
+              u.nome AS tecnico_nome, COALESCE(os.equipamento_snapshot->>'marca',a.marca) AS aparelho_marca,
+              COALESCE(os.equipamento_snapshot->>'modelo',a.modelo) AS aparelho_modelo,
+              COALESCE(os.equipamento_snapshot->>'capacidade',a.capacidade) AS aparelho_capacidade
        FROM ordens_servico os
        JOIN clientes c ON c.id=os.cliente_id AND c.empresa_id=os.empresa_id
        JOIN usuarios u ON u.id=os.tecnico_id AND u.empresa_id=os.empresa_id
@@ -100,8 +108,8 @@ class OsModel {
         [id],
       ),
       db.query(
-        "SELECT id,tipo,url,comentario,latitude,longitude,capturada_em,created_at FROM os_fotos WHERE os_id=$1 ORDER BY capturada_em,created_at",
-        [id],
+        "SELECT id,tipo,url,storage_key,comentario,latitude,longitude,capturada_em,created_at,tamanho_bytes,checksum_sha256 FROM os_fotos WHERE os_id=$1 AND empresa_id=$2 ORDER BY capturada_em,created_at",
+        [id, empresaId],
       ),
       db.query(
         `SELECT h.status_anterior,h.status_novo,h.observacao,h.created_at,u.nome usuario_nome
@@ -123,7 +131,7 @@ class OsModel {
       checklist: checklist.rows,
       medicoes: medicoes.rows[0] || null,
       itens: itens.rows,
-      fotos: fotos.rows,
+      fotos: fotos.rows.map(({ storage_key, ...foto }) => ({ ...foto, url: ArquivoUrlService.assinarFoto(foto.url, storage_key) })),
       linha_tempo: linhaTempo.rows,
       checklist_modelo: checklistModelo.rows,
     };
@@ -245,11 +253,11 @@ class OsModel {
     if (busca) {
       params.push(`%${busca}%`);
       condicoes.push(
-        `(c.nome ILIKE $${params.length} OR os.id::text ILIKE $${params.length} OR c.endereco ILIKE $${params.length})`,
+        `(c.nome ILIKE $${params.length} OR os.id::text ILIKE $${params.length} OR os.numero ILIKE $${params.length} OR c.endereco ILIKE $${params.length})`,
       );
     }
     const result = await db.query(
-      `SELECT os.id, os.tipo_servico, os.descricao_problema, os.status, os.agendado_para,
+      `SELECT os.id, os.numero, os.tipo_servico, os.descricao_problema, os.status, os.agendado_para,
               c.nome AS cliente_nome, c.endereco, c.latitude, c.longitude
        FROM ordens_servico os
        JOIN clientes c ON c.id = os.cliente_id AND c.empresa_id = os.empresa_id
@@ -260,7 +268,24 @@ class OsModel {
     return result.rows;
   }
 
-  async listarTodas(empresaId) {
+  async listarTodas(empresaId, paginacao = null, filtros = {}) {
+    const paginada = Boolean(paginacao);
+    const params = [empresaId];
+    const condicoes = ['os.empresa_id = $1', 'os.deleted_at IS NULL'];
+    if (paginada && paginacao.cursor) {
+      params.push(paginacao.cursor);
+      condicoes.push(`os.id < $${params.length}`);
+    }
+    if (filtros.status === 'ATIVAS') condicoes.push("os.status IN ('ABERTA','EM_ANDAMENTO')");
+    else if (filtros.status) {
+      params.push(filtros.status);
+      condicoes.push(`os.status = $${params.length}`);
+    }
+    if (filtros.busca) {
+      params.push(`%${filtros.busca}%`);
+      condicoes.push(`(os.numero ILIKE $${params.length} OR os.id::text ILIKE $${params.length} OR c.nome ILIKE $${params.length})`);
+    }
+    if (paginada) params.push(paginacao.limit + 1);
     const result = await db.query(
       `SELECT os.*,c.nome AS cliente_nome,c.telefone AS cliente_telefone,c.endereco AS cliente_endereco,
               c.cidade AS cliente_cidade,c.estado AS cliente_estado,u.nome AS tecnico_nome,
@@ -269,17 +294,28 @@ class OsModel {
        JOIN clientes c ON c.id = os.cliente_id
        JOIN usuarios u ON u.id = os.tecnico_id
        LEFT JOIN aparelhos a ON a.id=os.aparelho_id
-       WHERE os.empresa_id = $1 AND os.deleted_at IS NULL
-       ORDER BY os.agendado_para NULLS LAST, os.created_at DESC`,
-      [empresaId],
+       WHERE ${condicoes.join(' AND ')}
+       ORDER BY ${paginada ? 'os.id DESC' : 'os.agendado_para NULLS LAST, os.created_at DESC'}
+       ${paginada ? `LIMIT $${params.length}` : ''}`,
+      params,
     );
-    return result.rows;
+    if (!paginada) return result.rows;
+    const temProxima = result.rows.length > paginacao.limit;
+    const items = result.rows.slice(0, paginacao.limit);
+    return { items, next_cursor: temProxima ? String(items.at(-1).id) : null };
   }
 
-  async listarFinalizadas(empresaId, busca = "") {
+  async listarFinalizadas(empresaId, busca = "", paginacao = null) {
     const termo = `%${busca.trim()}%`;
+    const params = [empresaId, termo];
+    let cursorSql = '';
+    if (paginacao?.cursor) {
+      params.push(paginacao.cursor);
+      cursorSql = ` AND os.id < $${params.length}`;
+    }
+    if (paginacao) params.push(paginacao.limit + 1);
     const result = await db.query(
-      `SELECT os.id, os.tipo_servico, os.descricao_problema, os.valor_total,
+      `SELECT os.id, os.numero, os.tipo_servico, os.descricao_problema, os.valor_total,
               os.finalizado_em, os.pdf_url, c.nome AS cliente_nome,
               c.telefone AS cliente_telefone, u.nome AS tecnico_nome,
               COUNT(f.id)::int AS total_anexos,
@@ -290,19 +326,27 @@ class OsModel {
        JOIN usuarios u ON u.id = os.tecnico_id AND u.empresa_id = os.empresa_id
        LEFT JOIN os_fotos f ON f.os_id = os.id
        WHERE os.empresa_id = $1 AND os.status = 'FINALIZADA' AND os.deleted_at IS NULL
-         AND ($2 = '%%' OR c.nome ILIKE $2 OR os.id::text ILIKE $2)
+         AND ($2 = '%%' OR c.nome ILIKE $2 OR os.id::text ILIKE $2 OR os.numero ILIKE $2)${cursorSql}
        GROUP BY os.id, c.id, u.id
-       ORDER BY os.finalizado_em DESC
-       LIMIT 200`,
-      [empresaId, termo],
+       ORDER BY os.id DESC
+       LIMIT $${paginacao ? params.length : 3}`,
+      paginacao ? params : [...params, 200],
     );
-    return result.rows;
+    if (!paginacao) return result.rows;
+    const temProxima = result.rows.length > paginacao.limit;
+    const items = result.rows.slice(0, paginacao.limit);
+    return { items, next_cursor: temProxima ? String(items.at(-1).id) : null };
   }
 
   async buscarDadosCompletosParaPdf(id, empresaId) {
     const result = await db.query(
-      `SELECT os.*, c.nome AS cliente_nome, c.telefone AS telefone_whatsapp,
-              c.endereco AS cliente_endereco, e.nome AS empresa_nome, u.nome AS tecnico_nome
+      `SELECT os.*, COALESCE(os.cliente_snapshot->>'nome',c.nome) AS cliente_nome,
+              COALESCE(os.cliente_snapshot->>'telefone',c.telefone) AS telefone_whatsapp,
+              CONCAT_WS(', ',COALESCE(os.endereco_execucao_snapshot->>'endereco',c.endereco),
+                COALESCE(os.endereco_execucao_snapshot->>'numero',c.numero),
+                COALESCE(os.endereco_execucao_snapshot->>'cidade',c.cidade),
+                COALESCE(os.endereco_execucao_snapshot->>'estado',c.estado)) AS cliente_endereco,
+              e.nome AS empresa_nome, u.nome AS tecnico_nome
        FROM ordens_servico os
        JOIN clientes c ON c.id = os.cliente_id AND c.empresa_id = os.empresa_id
        JOIN empresas e ON e.id = os.empresa_id

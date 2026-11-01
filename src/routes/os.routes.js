@@ -4,6 +4,7 @@ const OsController = require('../controllers/OsController');
 const OsAgendaController = require('../controllers/os/OsAgendaController');
 const OsEventoController = require('../controllers/os/OsEventoController');
 const OsExecucaoController = require('../controllers/os/OsExecucaoController');
+const OsComunicacaoController = require('../controllers/os/OsComunicacaoController');
 const FotoController = require('../controllers/FotoController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const permitir = require('../middlewares/permissaoMiddleware');
@@ -31,6 +32,7 @@ router.get('/os/:id',         permitir('AGENDA_VISUALIZAR'), OsController.detalh
 router.post('/os',                  permitir('OS_CRIAR'),      validarCriacaoOs,   OsController.criar);
 router.patch('/os/:id/status',      permitir('OS_EXECUTAR'),   validarStatusOs,    OsController.atualizarStatus);
 router.patch('/os/:id/reagendar',   permitir('OS_REAGENDAR'),  validarReagendamento, OsController.reagendar);
+router.post('/os/:id/lembrete',     permitir('OS_REAGENDAR'),  OsComunicacaoController.enviarLembrete);
 
 // ── Execução técnica ────────────────────────────────────────────────────────
 router.patch('/os/:id/execucao',    permitir('OS_EXECUTAR'),   validarExecucaoOs,  OsExecucaoController.salvarExecucao);

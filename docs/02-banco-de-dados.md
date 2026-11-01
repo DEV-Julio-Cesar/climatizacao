@@ -457,6 +457,43 @@ Modelos de checklist por tipo de serviço. `empresa_id IS NULL` = padrão global
 
 ---
 
+### Domínio comercial e equipamentos serializados
+
+O patch `010_modelo_comercial_equipamentos.sql` amplia o modelo de forma
+aditiva. Nenhuma tabela ou coluna legada é removida nesta fase.
+
+| Tabela / extensão | Finalidade |
+|---|---|
+| `filiais` | Unidades operacionais da empresa, com uma única matriz ativa |
+| `locais_estoque` | Depósitos, lojas, veículos, técnicos e locais de terceiros |
+| `arquivos` | Metadados de objetos no S3/R2, checksum, autoria e exclusão lógica |
+| `equipamento_proprietarios` | Histórico temporal de proprietários dos aparelhos |
+| `unidades_estoque` | Controle individual por série de equipamentos novos e usados |
+| `avaliacoes_equipamento` | Avaliação, testes, defeitos e negociação de equipamentos usados |
+| `vendas` / `venda_itens` | Venda de produtos, serviços e unidades serializadas |
+| `venda_pagamentos` | Recebimentos e estornos vinculados à venda |
+| `garantias` | Cobertura de itens vendidos ou aparelhos instalados |
+| `dominio_auditoria` | Trilha imutável das operações comerciais sensíveis |
+
+As novas referências de filial e local usam chaves compostas com `empresa_id`.
+Isso impede que uma unidade de estoque de uma empresa seja ligada acidentalmente
+à filial ou ao depósito de outra empresa.
+
+#### Migração de CPF/CNPJ
+
+`clientes.cpf_cnpj` permanece temporariamente para compatibilidade. Os novos
+campos `documento_cifrado` e `documento_hash` permitem migrar gradualmente para
+cifra autenticada e busca por hash. A coluna antiga somente deve ser removida
+depois que API, exportações e dados históricos estiverem migrados e verificados.
+
+#### Regras de equipamentos usados
+
+- Cada unidade serializada tem condição, estado, custo de aquisição, reparo e venda.
+- Uma unidade somente pode aparecer uma vez em itens de venda.
+- Equipamentos vendidos exigem quantidade unitária.
+- `versao` permite atualização otimista para impedir reserva ou venda concorrente.
+- Fotos e laudos são ligados pelo repositório genérico `arquivos`.
+
 ## Índices
 
 | Índice | Tabela | Colunas |

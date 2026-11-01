@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const db = require('../config/database');
 const WhatsAppService = require('../services/WhatsAppService');
 const WhatsAppBotService = require('../services/WhatsAppBotService');
+const RealtimeService = require('../services/RealtimeService');
 
 const normalizar = (valor) => String(valor || '').replace(/\D/g, '');
 
@@ -91,7 +92,10 @@ class WhatsAppController {
              VALUES($1,$2,'ENTRADA',$3,$4,'recebida',$5) ON CONFLICT(whatsapp_id) DO NOTHING RETURNING id`,
             [conversa.rows[0].id, mensagem.id, mensagem.type || 'text', conteudo, data]
           );
-          if (inserida.rows[0]) await responderComBot(conversa.rows[0], conteudo, vinculo.nome);
+          if (inserida.rows[0]) {
+            await responderComBot(conversa.rows[0], conteudo, vinculo.nome);
+            RealtimeService.publicar(vinculo.empresa_id, 'whatsapp', { conversa_id:conversa.rows[0].id });
+          }
         }
       }
     } catch (error) { console.error('Falha ao processar webhook WhatsApp:', error.message); }
@@ -142,6 +146,7 @@ class WhatsAppController {
       const textoIdentificado = `*${atendente}:* ${texto}`;
       const mensagem = await enviarERegistrar(req.params.id, posse.rows[0].telefone, textoIdentificado, req.usuarioLogado.usuario_id);
       await db.query("UPDATE whatsapp_conversas SET fila_status='ATENDENDO',atendente_id=$1,bot_ativo=FALSE,ultima_mensagem=$2,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$3", [req.usuarioLogado.usuario_id, textoIdentificado, req.params.id]);
+      RealtimeService.publicar(req.usuarioLogado.empresa_id, 'whatsapp', { conversa_id:Number(req.params.id) });
       return res.status(201).json(mensagem);
     } catch (error) { return res.status(502).json({ erro: error.message || 'Falha ao enviar mensagem pelo WhatsApp.' }); }
   }
@@ -156,6 +161,7 @@ class WhatsAppController {
         [status, status === 'AUTOMACAO', req.params.id, req.usuarioLogado.empresa_id]
       );
       if (!result.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
+      RealtimeService.publicar(req.usuarioLogado.empresa_id, 'whatsapp', { conversa_id:Number(req.params.id) });
       return res.json(result.rows[0]);
     } catch (error) { return res.status(500).json({ erro: 'Falha ao mover conversa.' }); }
   }
@@ -172,6 +178,7 @@ class WhatsAppController {
       const saudacao = `Olá! Meu nome é ${atendente} e vou continuar o seu atendimento por aqui. Como posso ajudar?`;
       await enviarERegistrar(result.rows[0].id, result.rows[0].telefone, saudacao, req.usuarioLogado.usuario_id);
       await db.query('UPDATE whatsapp_conversas SET ultima_mensagem=$1,ultima_mensagem_em=NOW() WHERE id=$2', [saudacao, result.rows[0].id]);
+      RealtimeService.publicar(req.usuarioLogado.empresa_id, 'whatsapp', { conversa_id:Number(req.params.id) });
       return res.json({ ...result.rows[0], ultima_mensagem: saudacao, atendente_nome: atendente });
     } catch (error) { return res.status(500).json({ erro: 'Falha ao assumir atendimento.' }); }
   }
@@ -190,6 +197,7 @@ class WhatsAppController {
         `UPDATE whatsapp_conversas SET encerrado_em=NOW(),atendente_id=NULL,bot_ativo=FALSE,ultima_mensagem=$1,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$2`,
         [despedida, req.params.id]
       );
+      RealtimeService.publicar(req.usuarioLogado.empresa_id, 'whatsapp', { conversa_id:Number(req.params.id) });
       return res.json({ mensagem: 'Atendimento encerrado.' });
     } catch (error) { return res.status(500).json({ erro: 'Falha ao encerrar atendimento.' }); }
   }

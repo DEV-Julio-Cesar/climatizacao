@@ -8,6 +8,9 @@ const BASE_URL =
 export const api = axios.create({
   baseURL: BASE_URL,
   timeout: 20_000,
+  // Necessário para enviar o refresh cookie HttpOnly quando painel e API
+  // estiverem em origens diferentes autorizadas pelo backend.
+  withCredentials: true,
 });
 
 // ─── Mutex de refresh ──────────────────────────────────────────────────────
@@ -23,24 +26,19 @@ async function renovarSessao() {
   if (_refreshPromise) return _refreshPromise;
 
   _refreshPromise = (async () => {
-    const refreshToken = localStorage.getItem('climasaas_refresh_token');
-    if (!refreshToken) throw new Error('Sem refresh token.');
-
     // Usa fetch nativo para não passar pelo interceptor do axios
     // (evitaria loop infinito se o /auth/refresh também devolvesse 401)
     const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({ cliente: 'web' }),
     });
 
     if (!res.ok) throw new Error('Refresh falhou.');
 
     const dados = await res.json();
     localStorage.setItem('climasaas_token', dados.token);
-    if (dados.refresh_token) {
-      localStorage.setItem('climasaas_refresh_token', dados.refresh_token);
-    }
     return dados.token;
   })().finally(() => { _refreshPromise = null; });
 
@@ -79,7 +77,6 @@ api.interceptors.response.use(
     } catch {
       // Refresh falhou → sessão expirada definitivamente
       localStorage.removeItem('climasaas_token');
-      localStorage.removeItem('climasaas_refresh_token');
       localStorage.removeItem('climasaas_usuario');
       window.dispatchEvent(new Event('climasaas:session-expired'));
       return Promise.reject(error);
@@ -88,3 +85,11 @@ api.interceptors.response.use(
 );
 
 export function limparSessao(){for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
+
+export async function encerrarSessao() {
+  try {
+    await api.post('/auth/refresh/logout', {});
+  } finally {
+    limparSessao();
+  }
+}

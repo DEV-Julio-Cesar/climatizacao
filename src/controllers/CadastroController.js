@@ -1,5 +1,6 @@
 const db = require("../config/database");
 const QRCode = require("qrcode");
+const DocumentoService = require("../services/DocumentoService");
 
 class CadastroController {
   async listarTecnicos(req, res) {
@@ -15,7 +16,18 @@ class CadastroController {
   }
 
   async listarClientes(req, res) {
+    const querPaginacao = req.query.limit !== undefined || req.query.cursor !== undefined;
+    const limit = Number(req.query.limit || 50);
+    const cursor = req.query.cursor === undefined || req.query.cursor === '' ? null : Number(req.query.cursor);
+    if (querPaginacao && (!Number.isInteger(limit) || limit < 1 || limit > 100))
+      return res.status(400).json({ erro: "limit deve ser um inteiro entre 1 e 100." });
+    if (querPaginacao && cursor !== null && (!Number.isInteger(cursor) || cursor <= 0))
+      return res.status(400).json({ erro: "cursor inválido." });
     try {
+      const params = [req.usuarioLogado.empresa_id];
+      let cursorSql = "";
+      if (querPaginacao && cursor) { params.push(cursor); cursorSql = ` AND c.id < $${params.length}`; }
+      if (querPaginacao) params.push(limit + 1);
       const result = await db.query(
         `SELECT c.id, c.nome, c.telefone, c.cpf_cnpj, c.endereco, c.numero, c.complemento, c.bairro,
                 c.cep, c.cidade, c.estado, c.latitude, c.longitude,
@@ -24,10 +36,16 @@ class CadastroController {
                   'proxima_manutencao',a.proxima_manutencao))
                   FILTER (WHERE a.id IS NOT NULL), '[]') AS aparelhos
          FROM clientes c LEFT JOIN aparelhos a ON a.cliente_id = c.id AND a.deleted_at IS NULL
-         WHERE c.empresa_id = $1 AND c.deleted_at IS NULL GROUP BY c.id ORDER BY c.nome`,
-        [req.usuarioLogado.empresa_id],
+         WHERE c.empresa_id = $1 AND c.deleted_at IS NULL${cursorSql} GROUP BY c.id
+         ORDER BY ${querPaginacao ? "c.id DESC" : "c.nome"}
+         ${querPaginacao ? `LIMIT $${params.length}` : ""}`,
+        params,
       );
-      return res.json(result.rows);
+      result.rows = result.rows.map(exporDocumento);
+      if (!querPaginacao) return res.json(result.rows);
+      const temProxima = result.rows.length > limit;
+      const items = result.rows.slice(0, limit);
+      return res.json({ items, next_cursor: temProxima ? String(items.at(-1).id) : null });
     } catch (error) {
       return res.status(500).json({ erro: "Falha ao listar clientes." });
     }
@@ -36,15 +54,18 @@ class CadastroController {
   async criarCliente(req, res) {
     try {
       const d = req.body;
+      const documento = DocumentoService.proteger(d.cpf_cnpj, req.usuarioLogado.empresa_id);
       const r = await db.transaction(async (client) => {
         const criado = await client.query(
-          `INSERT INTO clientes (empresa_id,nome,telefone,cpf_cnpj,endereco,numero,complemento,bairro,cep,cidade,estado,latitude,longitude)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          `INSERT INTO clientes (empresa_id,nome,telefone,cpf_cnpj,documento_cifrado,documento_hash,tipo_pessoa,endereco,numero,complemento,bairro,cep,cidade,estado,latitude,longitude)
+           VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
           [
             req.usuarioLogado.empresa_id,
             d.nome,
             normalizarTelefone(d.telefone),
-            somenteDigitos(d.cpf_cnpj),
+            documento.documento_cifrado,
+            documento.documento_hash,
+            documento.documento ? (documento.documento.length === 11 ? "FISICA" : "JURIDICA") : null,
             d.endereco || null,
             d.numero || null,
             d.complemento || null,
@@ -68,7 +89,7 @@ class CadastroController {
           );
         return criado;
       });
-      return res.status(201).json(r.rows[0]);
+      return res.status(201).json(exporDocumento(r.rows[0]));
     } catch (e) {
       if (e.code === "23505")
         return res
@@ -81,13 +102,16 @@ class CadastroController {
   async atualizarCliente(req, res) {
     try {
       const d = req.body;
+      const documento = DocumentoService.proteger(d.cpf_cnpj, req.usuarioLogado.empresa_id);
       const r = await db.query(
-        `UPDATE clientes SET nome=$1,telefone=$2,cpf_cnpj=$3,endereco=$4,numero=$5,complemento=$6,bairro=$7,cep=$8,cidade=$9,estado=$10,latitude=$11,longitude=$12
-         WHERE id=$13 AND empresa_id=$14 AND deleted_at IS NULL RETURNING *`,
+        `UPDATE clientes SET nome=$1,telefone=$2,cpf_cnpj=NULL,documento_cifrado=$3,documento_hash=$4,tipo_pessoa=$5,endereco=$6,numero=$7,complemento=$8,bairro=$9,cep=$10,cidade=$11,estado=$12,latitude=$13,longitude=$14,updated_at=NOW()
+         WHERE id=$15 AND empresa_id=$16 AND deleted_at IS NULL RETURNING *`,
         [
           d.nome,
           normalizarTelefone(d.telefone),
-          somenteDigitos(d.cpf_cnpj),
+          documento.documento_cifrado,
+          documento.documento_hash,
+          documento.documento ? (documento.documento.length === 11 ? "FISICA" : "JURIDICA") : null,
           d.endereco || null,
           d.numero || null,
           d.complemento || null,
@@ -103,7 +127,7 @@ class CadastroController {
       );
       if (!r.rows[0])
         return res.status(404).json({ erro: "Cliente não encontrado." });
-      return res.json(r.rows[0]);
+      return res.json(exporDocumento(r.rows[0]));
     } catch (e) {
       if (e.code === "23505")
         return res
@@ -259,23 +283,46 @@ class CadastroController {
       );
       if (!cliente.rows[0])
         return res.status(404).json({ erro: "Cliente não encontrado." });
-      const [equipamentos, ordens] = await Promise.all([
-        db.query(
-          `SELECT *,to_char(instalado_em,'YYYY-MM-DD') instalado_em,to_char(garantia_ate,'YYYY-MM-DD') garantia_ate,to_char(proxima_manutencao,'YYYY-MM-DD') proxima_manutencao FROM aparelhos WHERE cliente_id=$1 AND empresa_id=$2 AND deleted_at IS NULL ORDER BY ambiente,marca,modelo`,
-          [req.params.id, req.usuarioLogado.empresa_id],
-        ),
-        db.query(
-          `SELECT os.id,os.tipo_servico,os.status,os.valor_total,os.agendado_para,os.finalizado_em,u.nome tecnico_nome,a.marca aparelho_marca,a.modelo aparelho_modelo FROM ordens_servico os JOIN usuarios u ON u.id=os.tecnico_id LEFT JOIN aparelhos a ON a.id=os.aparelho_id WHERE os.cliente_id=$1 AND os.empresa_id=$2 AND os.deleted_at IS NULL ORDER BY os.created_at DESC LIMIT 100`,
-          [req.params.id, req.usuarioLogado.empresa_id],
-        ),
-      ]);
+      const equipamentos = await db.query(
+        `SELECT *,to_char(instalado_em,'YYYY-MM-DD') instalado_em,to_char(garantia_ate,'YYYY-MM-DD') garantia_ate,to_char(proxima_manutencao,'YYYY-MM-DD') proxima_manutencao FROM aparelhos WHERE cliente_id=$1 AND empresa_id=$2 AND deleted_at IS NULL ORDER BY ambiente,marca,modelo`,
+        [req.params.id, req.usuarioLogado.empresa_id],
+      );
       return res.json({
         ...cliente.rows[0],
         aparelhos: equipamentos.rows,
-        ordens: ordens.rows,
       });
     } catch (e) {
       return res.status(500).json({ erro: "Falha ao carregar cliente." });
+    }
+  }
+
+  async listarOrdensCliente(req, res) {
+    const limit = Number(req.query.limit || 20);
+    const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      return res.status(400).json({ erro: "limit deve ser um inteiro entre 1 e 100." });
+    if (cursor !== null && (!Number.isInteger(cursor) || cursor <= 0))
+      return res.status(400).json({ erro: "cursor inválido." });
+    try {
+      const params = [req.params.id, req.usuarioLogado.empresa_id];
+      let cursorSql = "";
+      if (cursor) { params.push(cursor); cursorSql = ` AND os.id < $${params.length}`; }
+      params.push(limit + 1);
+      const r = await db.query(
+        `SELECT os.id,os.numero,os.tipo_servico,os.status,os.valor_total,os.agendado_para,os.finalizado_em,
+                u.nome tecnico_nome,a.marca aparelho_marca,a.modelo aparelho_modelo
+           FROM ordens_servico os
+           JOIN clientes c ON c.id=os.cliente_id AND c.empresa_id=os.empresa_id
+           JOIN usuarios u ON u.id=os.tecnico_id AND u.empresa_id=os.empresa_id
+           LEFT JOIN aparelhos a ON a.id=os.aparelho_id AND a.empresa_id=os.empresa_id
+          WHERE os.cliente_id=$1 AND os.empresa_id=$2 AND os.deleted_at IS NULL${cursorSql}
+          ORDER BY os.id DESC LIMIT $${params.length}`,
+        params,
+      );
+      const items = r.rows.slice(0, limit);
+      return res.json({ items, next_cursor: r.rows.length > limit ? String(items.at(-1).id) : null });
+    } catch {
+      return res.status(500).json({ erro: "Falha ao carregar histórico do cliente." });
     }
   }
 
@@ -324,4 +371,10 @@ function somenteDigitos(valor) {
 function normalizarTelefone(valor) {
   const n = String(valor || "").replace(/\D/g, "");
   return n || null;
+}
+function exporDocumento(cliente) {
+  if (!cliente) return cliente;
+  const documento = DocumentoService.decifrar(cliente.documento_cifrado) || cliente.cpf_cnpj || null;
+  const { documento_cifrado, documento_hash, ...seguro } = cliente;
+  return { ...seguro, cpf_cnpj: documento };
 }

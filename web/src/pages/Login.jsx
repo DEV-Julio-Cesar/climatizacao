@@ -14,9 +14,7 @@ export default function Login({ onLogin }) {
     setLoading(true);
     setErro('');
     try {
-      const { data } = await api.post('/login', { email, senha });
-      // Persiste refresh token imediatamente — antes de chamar onLogin
-      if (data.refresh_token) localStorage.setItem('climasaas_refresh_token', data.refresh_token);
+      const { data } = await api.post('/login', { email, senha, cliente: 'web' });
       onLogin(data.token, data.usuario);
     } catch (error) {
       const status = error.response?.status;

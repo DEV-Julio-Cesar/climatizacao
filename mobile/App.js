@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View, Text } from 'react-native';
 import * as Network from 'expo-network';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
-import { colors } from './src/styles/theme';
+import { useTheme } from './src/styles/useTheme';
 import LoginScreen from './src/screens/Login/LoginScreen';
 import AgendaMapa from './src/screens/Agenda/AgendaMapa';
 import MapaAtendimento from './src/screens/Agenda/MapaAtendimento';
@@ -47,6 +47,7 @@ const Tab = createBottomTabNavigator();
 const tabIcons = { AgendaTab: 'calendar-outline', ClientesTab: 'people-outline', GestaoTab: 'stats-chart-outline', PerfilTab: 'person-circle-outline' };
 
 function AbasPrincipais({ onLogout, usuario }) {
+  const { colors } = useTheme();
   const pode = (permissao) => usuario?.permissoes?.includes('*') || usuario?.permissoes?.includes(permissao) || !Array.isArray(usuario?.permissoes);
   return <Tab.Navigator screenOptions={({ route }) => ({
     headerStyle: { backgroundColor: colors.navy }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800' },
@@ -62,7 +63,12 @@ function AbasPrincipais({ onLogout, usuario }) {
   </Tab.Navigator>;
 }
 
-export default function App() {
+function AppContent() {
+  const { colors, isDark } = useTheme();
+  const navigationTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: { ...(isDark ? DarkTheme.colors : DefaultTheme.colors), primary:colors.primary, background:colors.background, card:colors.surface, text:colors.text, border:colors.border, notification:colors.danger },
+  };
   const [token, setToken] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [online, setOnline] = useState(true);
@@ -80,8 +86,8 @@ export default function App() {
   }, []);
   if (token === undefined) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator /></View>;
   return (
-    <ErrorBoundary><AppProvider><View style={{ flex:1 }}><NavigationContainer>
-      <StatusBar style="light" />
+    <ErrorBoundary><View style={{ flex:1, backgroundColor:colors.background }}><NavigationContainer theme={navigationTheme}>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <Stack.Navigator screenOptions={{
         headerTintColor: colors.surface,
         headerStyle: { backgroundColor: colors.navy },
@@ -134,6 +140,10 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
-    </NavigationContainer>{!online && <View style={{ position:'absolute',left:0,right:0,bottom:0,backgroundColor:'#A86600',padding:7 }}><Text style={{ color:'#fff',fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View></AppProvider></ErrorBoundary>
+    </NavigationContainer>{!online && <View accessibilityRole="alert" style={{ position:'absolute',left:0,right:0,bottom:0,backgroundColor:colors.warning,padding:7 }}><Text style={{ color:colors.navy,fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View></ErrorBoundary>
   );
+}
+
+export default function App() {
+  return <AppProvider><AppContent /></AppProvider>;
 }

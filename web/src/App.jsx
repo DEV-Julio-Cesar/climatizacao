@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Login from './pages/Login';
 import RecuperarSenha from './pages/RecuperarSenha';
-import { api } from './services/api';
+import { api, encerrarSessao, limparSessao } from './services/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
@@ -59,6 +59,7 @@ function Painel() {
   const [user, setUser] = useState(readUser);
   const [menuOpen, setMenuOpen] = useState(false);
   const [online, setOnline] = useState(true);
+  const [theme, setTheme] = useState(() => localStorage.getItem('climasaas_tema') || 'sistema');
   const availableMenus = useMemo(() => menus.filter((item) => canAccess(user, item)), [user]);
   const initialPage = () => location.hash.slice(1) || availableMenus[0]?.id || 'dashboard';
   const [page, setPage] = useState(initialPage);
@@ -77,9 +78,7 @@ function Painel() {
 
   useEffect(() => {
     const expirada = () => {
-      localStorage.removeItem('climasaas_token');
-      localStorage.removeItem('climasaas_refresh_token');
-      localStorage.removeItem('climasaas_usuario');
+      limparSessao();
       setToken(null);
       setUser({});
     };
@@ -94,6 +93,15 @@ function Painel() {
     return () => clearInterval(timer);
   }, [token]);
 
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const aplicar = () => { document.documentElement.dataset.theme = theme === 'sistema' ? (media.matches ? 'dark' : 'light') : theme; };
+    aplicar();
+    localStorage.setItem('climasaas_tema', theme);
+    media.addEventListener('change', aplicar);
+    return () => media.removeEventListener('change', aplicar);
+  }, [theme]);
+
   if (!token) {
     return <Login onLogin={(newToken, newUser) => {
       localStorage.setItem('climasaas_token', newToken);
@@ -105,11 +113,9 @@ function Painel() {
 
   const current = availableMenus.find((item) => item.id === page) || availableMenus[0];
   const CurrentPage = current?.component;
-  const logout = () => {
-    localStorage.removeItem('climasaas_token');
-    localStorage.removeItem('climasaas_refresh_token');
-    localStorage.removeItem('climasaas_usuario');
-    setToken(null);
+  const logout = async () => {
+    try { await encerrarSessao(); }
+    finally { setToken(null); setUser({}); }
   };
 
   return <div className="shell">
@@ -134,7 +140,7 @@ function Painel() {
           <button className="menu-toggle" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}>☰</button>
           <div><span className="eyebrow">PAINEL DE GESTÃO</span><h1>{current?.label || 'ClimaSaaS'}</h1></div>
         </div>
-        <div className={`header-status ${online ? '' : 'offline'}`}><span className="status-dot" />{online ? 'Sistema online' : 'Sem conexão'}</div>
+        <div className="header-actions"><button className="theme-toggle" aria-label="Alternar tema" title="Alternar tema" onClick={() => setTheme((atual) => atual === 'light' ? 'dark' : atual === 'dark' ? 'sistema' : 'light')}>{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</button><div className={`header-status ${online ? '' : 'offline'}`} role="status"><span className="status-dot" />{online ? 'Sistema online' : 'Sem conexão'}</div></div>
       </header>
       <Suspense fallback={<div className="loading">Carregando módulo...</div>}>
         {CurrentPage ? <CurrentPage /> : <div className="empty">Você não possui módulos disponíveis.</div>}

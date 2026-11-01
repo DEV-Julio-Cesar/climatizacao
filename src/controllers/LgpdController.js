@@ -12,6 +12,7 @@
 
 const db = require('../config/database');
 const logger = require('../config/logger');
+const DocumentoService = require('../services/DocumentoService');
 
 class LgpdController {
   /**
@@ -41,7 +42,7 @@ class LgpdController {
         ),
         // Clientes criados/gerenciados pelo usuário (se gestor)
         db.query(
-          `SELECT id, nome, telefone, email, cpf_cnpj, endereco, cidade, estado, created_at
+          `SELECT id, nome, telefone, email, cpf_cnpj, documento_cifrado, endereco, cidade, estado, created_at
              FROM clientes
             WHERE empresa_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
@@ -57,7 +58,7 @@ class LgpdController {
         aviso: 'Este relatório contém todos os dados pessoais associados à sua conta.',
         usuario: usuario.rows[0] ?? null,
         ordens_servico: os.rows,
-        clientes_empresa: clientes.rows,
+        clientes_empresa: clientes.rows.map(({ documento_cifrado, ...cliente }) => ({ ...cliente, cpf_cnpj: DocumentoService.decifrar(documento_cifrado) || cliente.cpf_cnpj })),
       });
     } catch (error) {
       logger.erro('lgpd.exportar', { usuario_id, erro_mensagem: error.message });

@@ -15,7 +15,7 @@ const PdfService = require('../src/services/PdfService');
 async function request(server, pathname, options = {}) {
   const address = server.address();
   const response = await fetch(`http://127.0.0.1:${address.port}${pathname}`, options);
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, headers: response.headers, body: await response.json() };
 }
 
 const token = jwt.sign({ token_use:'access',sid:'00000000-0000-4000-8000-000000000001',usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
@@ -42,7 +42,7 @@ test('health check responde sem autenticação', async () => {
   assert.equal(result.body.status, 'ok');
 });
 
-test('login do painel cria sessao e retorna refresh para o cliente atual', async () => {
+test('login web cria sessão, grava refresh em cookie HttpOnly e não o expõe no JSON', async () => {
   const originalQuery = db.query;
   const originalTransaction = db.transaction;
   const senhaHash = await require('bcryptjs').hash('Senha12345', 4);
@@ -60,20 +60,27 @@ test('login do painel cria sessao e retorna refresh para o cliente atual', async
   try {
     const result = await request(server, '/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'ana@example.com', senha: 'Senha12345' }),
+      body: JSON.stringify({ email: 'ana@example.com', senha: 'Senha12345', cliente: 'web' }),
     });
     assert.equal(result.status, 200);
     assert.ok(criada);
     const access = jwt.verify(result.body.token, process.env.JWT_SECRET);
-    const refresh = jwt.verify(result.body.refresh_token, process.env.JWT_SECRET);
     assert.equal(access.token_use, 'access');
-    assert.equal(refresh.token_use, 'refresh');
-    assert.equal(access.sid, refresh.sid);
+    assert.equal(result.body.refresh_token, undefined);
+    const cookie = result.headers.get('set-cookie');
+    assert.match(cookie, /climasaas_refresh=/);
+    assert.match(cookie, /HttpOnly/i);
+    assert.match(cookie, /SameSite=Strict/i);
   } finally { db.query = originalQuery; db.transaction = originalTransaction; }
 });
 
 test('rota protegida recusa chamada sem token', async () => {
   const result = await request(server, '/os/agenda');
+  assert.equal(result.status, 401);
+});
+
+test('stream em tempo real exige autenticação', async () => {
+  const result = await request(server, '/eventos/stream');
   assert.equal(result.status, 401);
 });
 
@@ -208,6 +215,72 @@ test('check-out exige coordenadas válidas (Bug 11 corrigido)', async () => {
   } finally { db.query = originalQuery; }
 });
 
+test('listagens paginadas rejeitam limit e cursor inválidos antes da consulta', async () => {
+  const originalQuery = db.query;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  try {
+    for (const rota of ['/os/todas?limit=101', '/os/todas?cursor=x', '/os/todas?status=DESCONHECIDA', '/os/finalizadas?limit=101', '/os/finalizadas?cursor=x', '/clientes?limit=0', '/clientes?cursor=-1', '/clientes/1/ordens?limit=0', '/clientes/1/ordens?cursor=x']) {
+      const result = await request(server, rota, { headers:{ Authorization:`Bearer ${tokenGestor}` } });
+      assert.equal(result.status, 400, rota);
+    }
+  } finally { db.query = originalQuery; }
+});
+
+test('repetição do check-out confirma o estado sem gravar outro histórico', async () => {
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  let consultasNaTransacao = 0;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async callback => callback({ query: async sql => {
+    consultasNaTransacao += 1;
+    if (sql.startsWith('SELECT * FROM ordens_servico')) return { rows: [{
+      id: 10, empresa_id: 3, tecnico_id: 7, status: 'EM_ANDAMENTO', checkout_em: new Date(),
+    }] };
+    throw new Error(`SQL não esperado: ${sql}`);
+  } });
+  try {
+    const result = await request(server, '/os/10/eventos', {
+      method: 'POST', headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ evento:'CHECKOUT', latitude:-23.5, longitude:-46.6 }),
+    });
+    assert.equal(result.status, 200);
+    assert.equal(consultasNaTransacao, 1);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});
+
+test('repetição de FINALIZADA não baixa estoque nem gera PDF novamente', async () => {
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  let consultasNaTransacao = 0;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async callback => callback({ query: async sql => {
+    consultasNaTransacao += 1;
+    if (sql.startsWith('SELECT * FROM ordens_servico')) return { rows: [{
+      id: 10, empresa_id: 3, tecnico_id: 7, status: 'FINALIZADA',
+      checkout_em: new Date(), pdf_url: 'https://example.test/os-10.pdf',
+    }] };
+    throw new Error(`SQL não esperado: ${sql}`);
+  } });
+  try {
+    const result = await request(server, '/os/10/status', {
+      method: 'PATCH', headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ novo_status:'FINALIZADA' }),
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.pdf_url, 'https://example.test/os-10.pdf');
+    assert.equal(consultasNaTransacao, 1);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});
+
 test('execução rejeita item de catálogo de outra empresa', async () => {
   const executor = { query: async () => ({ rows: [] }) };
   await assert.rejects(() => OsModel.salvarExecucao(10, 3, {
@@ -241,7 +314,11 @@ test('arquivo de evidência persistido pode ser recuperado após deploy', async 
   };
   try {
     const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/fotos/123e4567-e89b-12d3-a456-426614174000`);
+    const base = `http://127.0.0.1:${address.port}/arquivos/fotos/123e4567-e89b-12d3-a456-426614174000`;
+    const bloqueada = await fetch(base);
+    assert.equal(bloqueada.status, 403);
+    const assinada = require('../src/services/ArquivoUrlService').assinarFoto(base, '123e4567-e89b-12d3-a456-426614174000');
+    const response = await fetch(assinada);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'image/jpeg');
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'imagem-teste');
@@ -490,7 +567,9 @@ test('cadastro de cliente normaliza contato e cria aparelhos vinculados', async 
   };
   db.transaction = async (callback) => callback({ query:async(sql,params) => {
     if(sql.includes('INSERT INTO clientes')) {
-      assert.equal(params[0],3); assert.equal(params[2],'84999998888'); assert.equal(params[3],'52998224725');
+      assert.equal(params[0],3); assert.equal(params[2],'84999998888');
+      assert.equal(require('../src/services/DocumentoService').decifrar(params[3]),'52998224725');
+      assert.equal(params[4].length,64); assert.equal(params[5],'FISICA');
       return { rows:[{ id:44, nome:params[1] }] };
     }
     if(sql.includes('INSERT INTO aparelhos')) { aparelhos+=1; assert.equal(params[1],44); return { rows:[] }; }

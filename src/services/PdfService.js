@@ -31,7 +31,7 @@ class PdfService {
       doc.fontSize(20).text('Ordem de Serviço', { align: 'center' }).moveDown();
       doc.fontSize(11)
         .text(`Empresa: ${os.empresa_nome}`)
-        .text(`O.S. nº: ${os.id}`)
+        .text(`O.S. nº: ${os.numero || os.id}`)
         .text(`Técnico: ${os.tecnico_nome}`)
         .text(`Finalizada em: ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(os.finalizado_em))}`)
         .moveDown();
