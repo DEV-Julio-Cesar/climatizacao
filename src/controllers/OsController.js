@@ -208,7 +208,7 @@ class OsController {
 
   async atualizarStatus(req, res) {
     const id = Number(req.params.id);
-    const { novo_status: novoStatus, motivo_cancelamento: motivoCancelamento } = req.body;
+    const { novo_status: novoStatus, tipo_cancelamento: tipoCancelamento, motivo_cancelamento: motivoCancelamento } = req.body;
     const usuario = req.usuarioLogado;
 
     if (!Number.isInteger(id) || id <= 0)
@@ -241,14 +241,15 @@ class OsController {
                   finalizado_em   = CASE WHEN $1::varchar = 'FINALIZADA'   THEN NOW() ELSE finalizado_em   END,
                   iniciado_em     = CASE WHEN $1::varchar = 'EM_ANDAMENTO' THEN COALESCE(iniciado_em, NOW()) ELSE iniciado_em END,
                   motivo_cancelamento = CASE WHEN $1::varchar = 'CANCELADA' THEN $4 ELSE motivo_cancelamento END,
+                  tipo_cancelamento = CASE WHEN $1::varchar = 'CANCELADA' THEN $5 ELSE tipo_cancelamento END,
                   updated_at = NOW()
             WHERE id = $2 AND empresa_id = $3
             RETURNING *`,
-          [novoStatus, id, usuario.empresa_id, motivoCancelamento || null],
+          [novoStatus, id, usuario.empresa_id, motivoCancelamento || null, tipoCancelamento || null],
         );
 
         await OsModel.registrarHistorico(
-          { osId: id, statusAnterior: os.status, statusNovo: novoStatus, usuarioId: usuario.usuario_id, observacao: novoStatus === 'CANCELADA' ? motivoCancelamento : undefined },
+          { osId: id, statusAnterior: os.status, statusNovo: novoStatus, usuarioId: usuario.usuario_id, observacao: novoStatus === 'CANCELADA' ? `${tipoCancelamento}: ${motivoCancelamento}` : undefined },
           client,
         );
 

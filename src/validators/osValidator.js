@@ -8,6 +8,7 @@ const tiposServico = [
   "PROBLEMA_TECNICO",
 ];
 const statusOs = ["ABERTA", "EM_ANDAMENTO", "FINALIZADA", "CANCELADA"];
+const tiposCancelamento = ["CLIENTE_DESISTIU", "CLIENTE_AUSENTE", "SEM_PECA", "DUPLICIDADE_ERRO", "ADMINISTRATIVO", "OUTRO"];
 
 const criarOsSchema = z
   .object({
@@ -31,6 +32,7 @@ const criarOsSchema = z
 const statusSchema = z
   .object({
     novo_status: z.enum(statusOs),
+    tipo_cancelamento: z.enum(tiposCancelamento).optional(),
     motivo_cancelamento: z.string().trim().min(5).max(500).optional(),
   })
   .strict()
@@ -41,6 +43,9 @@ const statusSchema = z
         message: "Informe o motivo do cancelamento.",
         path: ["motivo_cancelamento"],
       });
+    }
+    if (dados.novo_status === "CANCELADA" && !dados.tipo_cancelamento) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione o tipo de cancelamento.", path: ["tipo_cancelamento"] });
     }
   });
 
