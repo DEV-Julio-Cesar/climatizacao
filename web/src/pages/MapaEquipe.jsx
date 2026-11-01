@@ -89,7 +89,7 @@ export default function MapaEquipe() {
           <p>
             {itens.length > 0
               ? `${itens.length} endereço${itens.length > 1 ? 's' : ''} com coordenadas`
-              : 'Nenhum atendimento com coordenadas disponível'}
+              : 'Nenhum atendimento com coordenadas disponível. Cadastre o endereço do cliente no mapa e crie uma O.S. agendada.'}
           </p>
         </div>
       </div>

@@ -237,11 +237,12 @@ export default function PainelDespacho() {
           <h2>Central de agendamento</h2>
           <p>Crie, atribua e acompanhe as visitas que chegam ao aplicativo dos técnicos.</p>
         </div>
-        <button className="primary" onClick={() => { setForm(vazio); setModal(true); }}>
+        <button className="primary" disabled={!tecnicos.length} onClick={() => { setForm(vazio); setModal(true); }}>
           + Novo agendamento
         </button>
       </section>
 
+      {!tecnicos.length && <div className="alert">Nenhum responsável ativo foi encontrado. Cadastre um técnico em Equipe técnica antes de criar o agendamento.</div>}
       {erro && (
         <div className="alert">
           {erro}

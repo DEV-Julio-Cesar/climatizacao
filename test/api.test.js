@@ -486,6 +486,23 @@ test('técnico com acesso à agenda consegue carregar a lista de responsáveis',
   } finally { db.query = originalQuery; }
 });
 
+test('administrador pode aparecer como responsável por agendamento', async () => {
+  const originalQuery = db.query;
+  db.query = async (sql) => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    if (sql.includes('FROM usuarios')) {
+      assert.match(sql, /'ADMIN'/);
+      return { rows: [{ id: 2, nome: 'Administrador', perfil: 'ADMIN' }] };
+    }
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  try {
+    const result = await request(server, '/tecnicos', { headers: { Authorization: `Bearer ${tokenGestor}` } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body[0].perfil, 'ADMIN');
+  } finally { db.query = originalQuery; }
+});
+
 test('gestor cadastra técnico somente na própria empresa', async () => {
   const originalQuery = db.query;
   let consultas = 0;

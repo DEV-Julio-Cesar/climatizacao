@@ -6,7 +6,7 @@ class CadastroController {
   async listarTecnicos(req, res) {
     try {
       const result = await db.query(
-        "SELECT id, nome, perfil FROM usuarios WHERE empresa_id = $1 AND ativo = TRUE AND deleted_at IS NULL AND perfil IN ('TECNICO', 'GESTOR') ORDER BY nome",
+        "SELECT id, nome, perfil FROM usuarios WHERE empresa_id = $1 AND ativo = TRUE AND deleted_at IS NULL AND perfil IN ('TECNICO', 'GESTOR', 'ADMIN') ORDER BY nome",
         [req.usuarioLogado.empresa_id],
       );
       return res.json(result.rows);
