@@ -34,7 +34,14 @@ export default function WhatsApp() {
     } catch (e) { setErro(e.response?.data?.erro || 'Falha ao abrir conversa.'); }
   }, [carregarConversas]);
 
-  useEffect(() => { carregarConversas(); }, [carregarConversas]);
+  useEffect(() => {
+    const conversaId = Number(sessionStorage.getItem('climasaas_abrir_conversa'));
+    sessionStorage.removeItem('climasaas_abrir_conversa');
+    if (Number.isInteger(conversaId) && conversaId > 0) {
+      setFila('ATENDENDO');
+      abrir({ id:conversaId }).then(carregarConversas);
+    } else carregarConversas();
+  }, [carregarConversas, abrir]);
   useEffect(() => conectarEventos((tipo, dados) => {
     if (tipo !== 'whatsapp') return;
     carregarConversas();

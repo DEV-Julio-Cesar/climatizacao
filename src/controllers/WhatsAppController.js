@@ -114,6 +114,50 @@ class WhatsAppController {
     } catch (error) { return res.status(500).json({ erro: 'Falha ao carregar conversas.' }); }
   }
 
+  async iniciarConversa(req, res) {
+    const clienteId = Number(req.body.cliente_id);
+    if (!Number.isInteger(clienteId) || clienteId <= 0)
+      return res.status(400).json({ erro: 'Cliente inválido.' });
+    try {
+      const conversa = await db.transaction(async client => {
+        const cliente = await client.query(
+          `SELECT id,nome,telefone FROM clientes
+           WHERE id=$1 AND empresa_id=$2 AND deleted_at IS NULL FOR UPDATE`,
+          [clienteId, req.usuarioLogado.empresa_id],
+        );
+        if (!cliente.rows[0]) throw Object.assign(new Error('Cliente não encontrado.'), { status:404 });
+        const telefone = normalizar(cliente.rows[0].telefone);
+        if (telefone.length < 12 || telefone.length > 13)
+          throw Object.assign(new Error('Cadastre o telefone do cliente com DDI e DDD para abrir o WhatsApp.'), { status:422 });
+        const atual = await client.query(
+          `SELECT * FROM whatsapp_conversas
+           WHERE empresa_id=$1 AND telefone=$2 FOR UPDATE`,
+          [req.usuarioLogado.empresa_id, telefone],
+        );
+        if (atual.rows[0]?.fila_status === 'ATENDENDO' && atual.rows[0].atendente_id && atual.rows[0].atendente_id !== req.usuarioLogado.usuario_id)
+          throw Object.assign(new Error('Este cliente já está sendo atendido por outro usuário.'), { status:409 });
+        if (atual.rows[0]) {
+          return (await client.query(
+            `UPDATE whatsapp_conversas SET cliente_id=$1,nome_contato=$2,fila_status='ATENDENDO',
+                    atendente_id=$3,bot_ativo=FALSE,encerrado_em=NULL,updated_at=NOW()
+             WHERE id=$4 RETURNING *`,
+            [cliente.rows[0].id, cliente.rows[0].nome, req.usuarioLogado.usuario_id, atual.rows[0].id],
+          )).rows[0];
+        }
+        return (await client.query(
+          `INSERT INTO whatsapp_conversas
+             (empresa_id,cliente_id,telefone,nome_contato,fila_status,atendente_id,bot_ativo)
+           VALUES($1,$2,$3,$4,'ATENDENDO',$5,FALSE) RETURNING *`,
+          [req.usuarioLogado.empresa_id, cliente.rows[0].id, telefone, cliente.rows[0].nome, req.usuarioLogado.usuario_id],
+        )).rows[0];
+      });
+      RealtimeService.publicar(req.usuarioLogado.empresa_id, 'whatsapp', { conversa_id:conversa.id });
+      return res.status(201).json(conversa);
+    } catch (error) {
+      return res.status(error.status || 500).json({ erro:error.status ? error.message : 'Falha ao iniciar conversa.' });
+    }
+  }
+
   async listarMensagens(req, res) {
     try {
       const conversa = await db.query('SELECT * FROM whatsapp_conversas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.usuarioLogado.empresa_id]);

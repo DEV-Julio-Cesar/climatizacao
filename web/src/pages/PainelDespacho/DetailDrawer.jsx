@@ -1,8 +1,9 @@
 import React from "react";
 import { CORES_STATUS, rotulo } from "./dispatchUtils";
 import { DateInputBR, DurationSelect } from "./ScheduleModal";
+import OsWorkPanel from "./OsWorkPanel";
 
-export default function DetailDrawer({ detalhe, setDetalhe, tecnicos, fechar, salvar, lembrar, enviandoLembrete, enviarFoto, enviandoFoto }) {
+export default function DetailDrawer({ detalhe, setDetalhe, tecnicos, fechar, salvar, lembrar, enviandoLembrete, enviarFoto, enviandoFoto, abrirWhatsApp, abrindoWhatsApp, atualizarOs, informarErro }) {
   const os = detalhe.os;
   const atualizar = (campo, valor) => setDetalhe(atual => ({ ...atual, [campo]: valor }));
   return (
@@ -22,7 +23,8 @@ export default function DetailDrawer({ detalhe, setDetalhe, tecnicos, fechar, sa
           <DurationSelect value={detalhe.duracao} onChange={valor => atualizar("duracao", valor)} />
           <div className="form-grid"><DateInputBR value={detalhe.data} onChange={valor => atualizar("data", valor)} /><input type="time" value={detalhe.hora} onChange={evento => atualizar("hora", evento.target.value)} /></div>
           <button className="primary wide" onClick={salvar}>Salvar alteração</button></>}
-        <div className="support-actions"><a href={`tel:${os.cliente_telefone || ""}`}>Ligar para cliente</a><a target="_blank" rel="noreferrer" href={`https://wa.me/${String(os.cliente_telefone || "").replace(/\D/g, "")}`}>Abrir WhatsApp</a>{os.agendado_para && !["FINALIZADA", "CANCELADA"].includes(os.status) && <button disabled={enviandoLembrete} onClick={() => lembrar(os.id)}>{enviandoLembrete ? "Enviando..." : "Enviar lembrete"}</button>}</div>
+        <div className="support-actions"><a href={`tel:${os.cliente_telefone || ""}`}>Ligar para cliente</a><button disabled={abrindoWhatsApp} onClick={() => abrirWhatsApp(os)}>{abrindoWhatsApp ? "Abrindo..." : "Abrir WhatsApp"}</button>{os.agendado_para && !["FINALIZADA", "CANCELADA"].includes(os.status) && <button disabled={enviandoLembrete} onClick={() => lembrar(os.id)}>{enviandoLembrete ? "Enviando..." : "Enviar lembrete"}</button>}</div>
+        <OsWorkPanel os={os} recarregar={atualizarOs} erro={informarErro} fechar={fechar}/>
       </section>
     </div>
   );

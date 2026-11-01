@@ -7,6 +7,7 @@ router.get('/webhooks/whatsapp', controller.verificarWebhook);
 router.post('/webhooks/whatsapp', controller.receberWebhook);
 router.use(auth);
 router.get('/atendimento/whatsapp/conversas', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarConversas);
+router.post('/atendimento/whatsapp/iniciar', permitir('ATENDIMENTO_RESPONDER'), controller.iniciarConversa);
 router.get('/atendimento/whatsapp/conversas/:id', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarMensagens);
 router.post('/atendimento/whatsapp/conversas/:id/mensagens', permitir('ATENDIMENTO_RESPONDER'), controller.enviarMensagem);
 router.patch('/atendimento/whatsapp/conversas/:id/fila', permitir('ATENDIMENTO_RESPONDER'), controller.alterarFila);

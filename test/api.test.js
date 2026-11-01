@@ -402,6 +402,35 @@ test('conversas do WhatsApp exigem autenticação', async () => {
   assert.equal(result.status, 401);
 });
 
+test('atendimento interno cria conversa da empresa para o cliente', async () => {
+  const originalQuery = db.query;
+  const originalTransaction = db.transaction;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    throw new Error(`SQL não esperado: ${sql}`);
+  };
+  db.transaction = async callback => callback({ query:async(sql, params) => {
+    if (sql.includes('FROM clientes')) {
+      assert.deepEqual(params, [44, 3]);
+      return { rows:[{ id:44, nome:'Cliente', telefone:'5584999999999' }] };
+    }
+    if (sql.includes('FROM whatsapp_conversas')) return { rows:[] };
+    if (sql.includes('INSERT INTO whatsapp_conversas')) {
+      assert.deepEqual(params, [3, 44, '5584999999999', 'Cliente', 2]);
+      return { rows:[{ id:81, empresa_id:3, cliente_id:44, fila_status:'ATENDENDO' }] };
+    }
+    throw new Error(`SQL não esperado: ${sql}`);
+  } });
+  try {
+    const result = await request(server, '/atendimento/whatsapp/iniciar', {
+      method:'POST', headers:{ Authorization:`Bearer ${tokenGestor}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ cliente_id:44 }),
+    });
+    assert.equal(result.status, 201);
+    assert.equal(result.body.id, 81);
+  } finally { db.query = originalQuery; db.transaction = originalTransaction; }
+});
+
 test('robô do WhatsApp apresenta as duas opções no primeiro contato', () => {
   const resposta = WhatsAppBotService.decidir('INICIO', 'Olá');
   assert.match(resposta.texto, /1 - Já sou cliente/);

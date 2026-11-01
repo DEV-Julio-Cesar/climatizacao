@@ -21,6 +21,7 @@ export default function PainelDespacho() {
   const [salvando, setSalvando] = useState(false);
   const [enviandoLembrete, setEnviandoLembrete] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [abrindoWhatsApp, setAbrindoWhatsApp] = useState(false);
   const [sucesso, setSucesso] = useState("");
 
   const usuario = useMemo(() => {
@@ -191,6 +192,17 @@ export default function PainelDespacho() {
     }
   };
 
+  const abrirWhatsApp = async (os) => {
+    setAbrindoWhatsApp(true); setErro("");
+    try {
+      const { data } = await api.post("/atendimento/whatsapp/iniciar", { cliente_id:Number(os.cliente_id) });
+      sessionStorage.setItem("climasaas_abrir_conversa", String(data.id));
+      location.hash = "whatsapp";
+    } catch (e) {
+      setErro(mensagemErro(e, "Não foi possível abrir o atendimento pelo WhatsApp."));
+    } finally { setAbrindoWhatsApp(false); }
+  };
+
   // ── Abrir slot vazio no calendário ────────────────────────────────────────
   const abrirHorario = (slot) => {
     if (!podeCriar) return;
@@ -225,6 +237,7 @@ export default function PainelDespacho() {
       duracao: os.duracao_prevista_minutos || 120,
     });
   };
+  const atualizarOsDetalhada=async()=>{if(!detalhe.os)return;const{data}=await api.get(`/os/${detalhe.os.id}`);setDetalhe(a=>({...a,os:data?.os||data}));await carregar()};
 
   if (loading)
     return <div className="loading">Carregando central de agendamento...</div>;
@@ -293,7 +306,9 @@ export default function PainelDespacho() {
       {detalhe.os && <DetailDrawer detalhe={detalhe} setDetalhe={setDetalhe} tecnicos={tecnicos}
         fechar={() => setDetalhe(detalheVazio)} salvar={salvarAgendamento}
         lembrar={enviarLembrete} enviandoLembrete={enviandoLembrete}
-        enviarFoto={enviarFoto} enviandoFoto={enviandoFoto} />}
+        enviarFoto={enviarFoto} enviandoFoto={enviandoFoto}
+        abrirWhatsApp={abrirWhatsApp} abrindoWhatsApp={abrindoWhatsApp}
+        atualizarOs={atualizarOsDetalhada} informarErro={setErro} />}
     </div>
   );
 }
