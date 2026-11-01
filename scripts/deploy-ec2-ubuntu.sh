@@ -67,6 +67,7 @@ EOF
 fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+install -d -o "$APP_USER" -g "$APP_USER" -m 750 "$APP_DIR/tmp" "$APP_DIR/tmp/uploads"
 sudo -u "$APP_USER" npm --prefix "$APP_DIR" ci --omit=dev
 sudo -u "$APP_USER" npm --prefix "$APP_DIR/web" ci
 sudo -u "$APP_USER" npm --prefix "$APP_DIR/web" run build
