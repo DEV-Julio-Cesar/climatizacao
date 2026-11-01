@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "migrate": "node src/database/migrate.js",
     "seed": "node src/webhooks/seed.js",
+    "admin:create": "node scripts/create-admin.js",
     "seed:catalogo": "node src/webhooks/seed-catalogo.js",
     "test": "node --test --test-isolation=none test/*.test.js",
     "check": "node --check server.js && node --check src/app.js",
