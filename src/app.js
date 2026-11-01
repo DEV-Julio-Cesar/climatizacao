@@ -37,7 +37,7 @@ function createApp() {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.basemaps.cartocdn.com', 'https://unpkg.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://server.arcgisonline.com', 'https://unpkg.com'],
         connectSrc: ["'self'"],
         fontSrc: ["'self'", 'data:'],
       },

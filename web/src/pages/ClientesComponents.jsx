@@ -14,7 +14,7 @@ export function LocationPicker({ form, setForm }) {
   const position = temCoordenadas(form) ? [Number(form.latitude), Number(form.longitude)] : [-14.235, -51.9253];
   const zoom = temCoordenadas(form) ? 16 : 4;
   return <div className="address-map"><MapContainer center={position} zoom={zoom} scrollWheelZoom>
-    <TileLayer attribution="© OpenStreetMap contributors © CARTO" url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+    <TileLayer attribution="Tiles © Esri · dados OpenStreetMap contributors e GIS User Community" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
     <MapSync position={position} zoom={zoom} />
     <MapClick onChange={(latitude, longitude) => setForm(atual => ({ ...atual, latitude, longitude }))} />
     {temCoordenadas(form) && <Marker position={position} />}
