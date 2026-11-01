@@ -1,6 +1,6 @@
 import React from "react";
 import { Calendar, momentLocalizer } from "react-big-calendar";
-import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
+import dragAndDropModule from "react-big-calendar/lib/addons/dragAndDrop";
 import moment from "moment";
 import "moment/locale/pt-br";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -9,6 +9,11 @@ import { CORES_STATUS } from "./dispatchUtils";
 
 moment.locale("pt-br");
 const localizer = momentLocalizer(moment);
+// O addon é publicado como CommonJS com `exports.default`. Dependendo da
+// versão do Vite, o import pode chegar como função ou como { default }.
+const withDragAndDrop = typeof dragAndDropModule === "function"
+  ? dragAndDropModule
+  : dragAndDropModule.default;
 const CalendarWithDragAndDrop = withDragAndDrop(Calendar);
 
 const mensagens = {
