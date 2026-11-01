@@ -100,8 +100,8 @@ export default function MapaEquipe() {
         style={{ height: '65vh', borderRadius: 16 }}
       >
         <TileLayer
-          attribution="© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>"
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="© OpenStreetMap contributors © CARTO"
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
         {itens.map((item) => (
           <Marker
