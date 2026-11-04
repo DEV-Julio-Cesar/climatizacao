@@ -1,29 +1,17 @@
+const ContasWhatsApp = require('../services/WhatsAppContaService');
 const crypto = require('crypto');
 const db = require('../config/database');
-const WhatsAppService = require('../services/WhatsAppService');
 const WhatsAppBotService = require('../services/WhatsAppBotService');
 
 const normalizar = (valor) => String(valor || '').replace(/\D/g, '');
-
-async function identificarEmpresa(telefone) {
-  const cliente = await db.query(
-    `SELECT c.id AS cliente_id,c.empresa_id,c.nome FROM clientes c JOIN empresas e ON e.id=c.empresa_id
-     WHERE c.deleted_at IS NULL AND e.ativo=TRUE
-       AND RIGHT(regexp_replace(COALESCE(c.telefone,''),'\D','','g'),11)=RIGHT($1,11)
-     ORDER BY c.id LIMIT 1`, [telefone]
-  );
-  if (cliente.rows[0]) return cliente.rows[0];
-  if (process.env.WHATSAPP_EMPRESA_ID) return { empresa_id: Number(process.env.WHATSAPP_EMPRESA_ID) };
-  const unica = await db.query('SELECT id AS empresa_id FROM empresas WHERE ativo=TRUE AND deleted_at IS NULL ORDER BY id LIMIT 2');
-  return unica.rows.length === 1 ? unica.rows[0] : null;
-}
 
 async function responderComBot(conversa, mensagemRecebida, clienteNome) {
   if (!conversa.bot_ativo) return;
   const resposta = WhatsAppBotService.decidir(conversa.bot_etapa, mensagemRecebida, clienteNome);
   if (!resposta) return;
   try {
-    const retorno = await WhatsAppService.enviarMensagem(conversa.telefone, resposta.texto);
+    const canal=await ContasWhatsApp.paraEmpresa(conversa.empresa_id);
+    const retorno = await canal.enviarMensagem(conversa.telefone, resposta.texto);
     await db.query(
       `INSERT INTO whatsapp_mensagens(conversa_id,whatsapp_id,direcao,tipo,conteudo,status)
        VALUES($1,$2,'SAIDA','text',$3,'enviada') ON CONFLICT(whatsapp_id) DO NOTHING`,
@@ -41,8 +29,9 @@ async function nomeDoAtendente(usuario) {
   return result.rows[0]?.nome || 'Atendente';
 }
 
-async function enviarERegistrar(conversaId, telefone, texto, usuarioId) {
-  const retorno = await WhatsAppService.enviarMensagem(telefone, texto);
+async function enviarERegistrar(conversaId, telefone, texto, usuarioId, empresaId) {
+  const canal=await ContasWhatsApp.paraEmpresa(empresaId);
+  const retorno = await canal.enviarMensagem(telefone, texto);
   const mensagem = await db.query(
     `INSERT INTO whatsapp_mensagens(conversa_id,whatsapp_id,direcao,tipo,conteudo,status,enviado_por)
      VALUES($1,$2,'SAIDA','text',$3,'enviada',$4) RETURNING *`,
@@ -71,12 +60,14 @@ class WhatsAppController {
     try {
       for (const entrada of req.body.entry || []) for (const alteracao of entrada.changes || []) {
         const valor = alteracao.value || {};
+        const destino=await ContasWhatsApp.identificar(valor.metadata?.phone_number_id,'');
+        if(!destino)continue;
         for (const status of valor.statuses || []) await db.query(
-          'UPDATE whatsapp_mensagens SET status=$1 WHERE whatsapp_id=$2', [status.status || 'enviada', status.id]
+          'UPDATE whatsapp_mensagens m SET status=$1 FROM whatsapp_conversas w WHERE m.conversa_id=w.id AND m.whatsapp_id=$2 AND w.empresa_id=$3', [status.status || 'enviada', status.id, destino.empresa_id]
         );
         for (const mensagem of valor.messages || []) {
           const telefone = normalizar(mensagem.from); if (!telefone) continue;
-          const vinculo = await identificarEmpresa(telefone); if (!vinculo?.empresa_id) continue;
+          const vinculo = await ContasWhatsApp.identificar(valor.metadata?.phone_number_id, telefone); if (!vinculo?.empresa_id) continue;
           const contato = (valor.contacts || []).find((item) => normalizar(item.wa_id) === telefone);
           const conteudo = mensagem.text?.body || mensagem.button?.text || mensagem.interactive?.button_reply?.title || mensagem.interactive?.list_reply?.title || `[${mensagem.type || 'mensagem'}]`;
           const data = mensagem.timestamp ? new Date(Number(mensagem.timestamp) * 1000) : new Date();
@@ -116,7 +107,7 @@ class WhatsAppController {
       if (!conversa.rows[0]) return res.status(404).json({ erro: 'Conversa não encontrada.' });
       if (conversa.rows[0].fila_status === 'ATENDENDO' && conversa.rows[0].atendente_id !== req.usuarioLogado.usuario_id) return res.status(403).json({ erro: 'Esta conversa está com outro atendente.' });
       const mensagens = await db.query('SELECT * FROM whatsapp_mensagens WHERE conversa_id=$1 ORDER BY ocorrida_em,id LIMIT 500', [req.params.id]);
-      await db.query('UPDATE whatsapp_conversas SET nao_lidas=0 WHERE id=$1', [req.params.id]);
+      await db.query('UPDATE whatsapp_conversas SET nao_lidas=0 WHERE id=$1 AND empresa_id=$2 AND nao_lidas<>0', [req.params.id,req.usuarioLogado.empresa_id]);
       return res.json({ conversa: conversa.rows[0], mensagens: mensagens.rows });
     } catch (error) { return res.status(500).json({ erro: 'Falha ao carregar mensagens.' }); }
   }
@@ -137,10 +128,10 @@ class WhatsAppController {
       const atendente = await nomeDoAtendente(req.usuarioLogado);
       if (conversa.rows[0].fila_status !== 'ATENDENDO') {
         const saudacao = `Olá! Meu nome é ${atendente} e vou continuar o seu atendimento por aqui. Como posso ajudar?`;
-        await enviarERegistrar(req.params.id, posse.rows[0].telefone, saudacao, req.usuarioLogado.usuario_id);
+        await enviarERegistrar(req.params.id, posse.rows[0].telefone, saudacao, req.usuarioLogado.usuario_id, req.usuarioLogado.empresa_id);
       }
       const textoIdentificado = `*${atendente}:* ${texto}`;
-      const mensagem = await enviarERegistrar(req.params.id, posse.rows[0].telefone, textoIdentificado, req.usuarioLogado.usuario_id);
+      const mensagem = await enviarERegistrar(req.params.id, posse.rows[0].telefone, textoIdentificado, req.usuarioLogado.usuario_id, req.usuarioLogado.empresa_id);
       await db.query("UPDATE whatsapp_conversas SET fila_status='ATENDENDO',atendente_id=$1,bot_ativo=FALSE,ultima_mensagem=$2,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$3", [req.usuarioLogado.usuario_id, textoIdentificado, req.params.id]);
       return res.status(201).json(mensagem);
     } catch (error) { return res.status(502).json({ erro: error.message || 'Falha ao enviar mensagem pelo WhatsApp.' }); }
@@ -170,7 +161,7 @@ class WhatsAppController {
       if (!result.rows[0]) return res.status(409).json({ erro: 'Esta conversa já foi assumida por outro atendente.' });
       const atendente = await nomeDoAtendente(req.usuarioLogado);
       const saudacao = `Olá! Meu nome é ${atendente} e vou continuar o seu atendimento por aqui. Como posso ajudar?`;
-      await enviarERegistrar(result.rows[0].id, result.rows[0].telefone, saudacao, req.usuarioLogado.usuario_id);
+      await enviarERegistrar(result.rows[0].id, result.rows[0].telefone, saudacao, req.usuarioLogado.usuario_id, req.usuarioLogado.empresa_id);
       await db.query('UPDATE whatsapp_conversas SET ultima_mensagem=$1,ultima_mensagem_em=NOW() WHERE id=$2', [saudacao, result.rows[0].id]);
       return res.json({ ...result.rows[0], ultima_mensagem: saudacao, atendente_nome: atendente });
     } catch (error) { return res.status(500).json({ erro: 'Falha ao assumir atendimento.' }); }
@@ -185,7 +176,7 @@ class WhatsAppController {
       if (!conversa.rows[0]) return res.status(409).json({ erro: 'Somente o atendente responsável pode encerrar esta conversa.' });
       const atendente = await nomeDoAtendente(req.usuarioLogado);
       const despedida = `Atendimento encerrado por ${atendente}. Agradecemos o contato! Se precisar novamente, é só enviar uma nova mensagem.`;
-      await enviarERegistrar(req.params.id, conversa.rows[0].telefone, despedida, req.usuarioLogado.usuario_id);
+      await enviarERegistrar(req.params.id, conversa.rows[0].telefone, despedida, req.usuarioLogado.usuario_id, req.usuarioLogado.empresa_id);
       await db.query(
         `UPDATE whatsapp_conversas SET encerrado_em=NOW(),atendente_id=NULL,bot_ativo=FALSE,ultima_mensagem=$1,ultima_mensagem_em=NOW(),updated_at=NOW() WHERE id=$2`,
         [despedida, req.params.id]

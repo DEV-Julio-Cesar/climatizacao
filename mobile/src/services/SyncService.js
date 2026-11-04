@@ -1,14 +1,12 @@
 import * as Network from 'expo-network';
-import { listarFila, registrarFalha, removerFila, descartar } from '../database/sqlite';
+import { listarFila, registrarFalha, removerFila } from '../database/sqlite';
+import * as SecureStore from 'expo-secure-store';
 import { api } from './api';
 import * as FileSystem from 'expo-file-system/legacy';
 
-/**
- * Número máximo de tentativas antes de descartar um item da fila.
- * Evita que operações com erro permanente (OS deletada, dados inválidos)
- * fiquem presas para sempre no dispositivo do técnico.
- */
+// Após cinco falhas, pausa o envio automático e mantém o reenvio manual.
 const MAX_TENTATIVAS = 5;
+let sincronizacao = null;
 
 /**
  * Verifica se o erro recebido indica que o servidor já processou essa operação.
@@ -38,14 +36,24 @@ function jaProcessado(error) {
  * @returns {{ enviados: number }}
  */
 export async function tentarSincronizarOffline(itemId = null) {
+  if (sincronizacao) return sincronizacao;
+  sincronizacao = sincronizar(itemId).finally(() => { sincronizacao = null; });
+  return sincronizacao;
+}
+
+async function sincronizar(itemId) {
   const rede = await Network.getNetworkStateAsync();
   if (!rede.isConnected || rede.isInternetReachable === false) return { enviados: 0 };
 
   let enviados = 0;
+  const contaInicial = await SecureStore.getItemAsync('climasaas_usuario');
   const fila = await listarFila();
   const itens = itemId === null ? fila : fila.filter((v) => v.id === itemId);
 
   for (const item of itens) {
+    if (await SecureStore.getItemAsync('climasaas_usuario') !== contaInicial) break;
+    // Falhas repetidas permanecem disponíveis para reenvio manual.
+    if (itemId === null && item.tentativas >= MAX_TENTATIVAS) break;
     try {
       const payload = JSON.parse(item.payload);
       // _client_uuid é injetado por enfileirar() para identificar a operação
@@ -54,30 +62,29 @@ export async function tentarSincronizarOffline(itemId = null) {
       await _despachar(item.tipo, payload, clientUuid);
 
       await removerFila(item.id);
+      await limparFotoLocal(item);
       enviados += 1;
     } catch (error) {
       if (jaProcessado(error)) {
         // Servidor já processou — pode remover sem contar como enviado agora
         await removerFila(item.id);
+        await limparFotoLocal(item);
         enviados += 1;
         continue;
       }
 
       await registrarFalha(item.id, error.message);
 
-      // Bug 2 — descartar itens que excederam o limite de tentativas.
-      // Itens com erro permanente (OS removida, dados inválidos) não devem
-      // ficar presos na fila para sempre; após MAX_TENTATIVAS são descartados.
+      // Mantém a operação e suas evidências para recuperação manual.
       const tentativasAtuais = (item.tentativas || 0) + 1;
       if (tentativasAtuais >= MAX_TENTATIVAS) {
-        await descartar(item.id);
-        continue;
+        break;
       }
 
       if (error.status && error.status >= 400 && error.status < 500) {
         // Erro permanente do cliente (dados inválidos, acesso negado etc.)
         // → marca e segue para o próximo item
-        continue;
+        break;
       }
 
       // Erro de rede ou 5xx → interrompe para não marttelar o servidor
@@ -99,13 +106,14 @@ async function _despachar(tipo, payload, clientUuid) {
 
   switch (tipo) {
     case 'CRIAR_OS':
-      return api.chamadaAutenticada('/os', 'POST', dados);
+      return api.chamadaAutenticada('/os', 'POST', dados, 0, clientUuid);
 
     case 'STATUS_OS':
       return api.chamadaAutenticada(
         `/os/${dados.os_id}/status`,
         'PATCH',
         { novo_status: dados.novo_status },
+        0, clientUuid,
       );
 
     case 'EVENTO_OS':
@@ -113,6 +121,7 @@ async function _despachar(tipo, payload, clientUuid) {
         `/os/${dados.os_id}/eventos`,
         'POST',
         dados.dados,
+        0, clientUuid,
       );
 
     case 'EXECUCAO_OS':
@@ -120,6 +129,7 @@ async function _despachar(tipo, payload, clientUuid) {
         `/os/${dados.os_id}/execucao`,
         'PATCH',
         dados.dados,
+        0, clientUuid,
       );
 
     case 'RETORNO_OS':
@@ -127,6 +137,7 @@ async function _despachar(tipo, payload, clientUuid) {
         `/os/${dados.os_id}/retorno`,
         'POST',
         dados.dados,
+        0, clientUuid,
       );
 
     case 'AGENDAR_OS':
@@ -134,6 +145,7 @@ async function _despachar(tipo, payload, clientUuid) {
         `/os/${dados.os_id}/agendar`,
         'PATCH',
         dados.dados,
+        0, clientUuid,
       );
 
     case 'FOTO_OS': {
@@ -145,12 +157,6 @@ async function _despachar(tipo, payload, clientUuid) {
         { uri: dados.uri, name: dados.nome, type: dados.mime },
         metadados,
       );
-      // Remove arquivo temporário local independentemente do resultado.
-      // Loga falha em vez de silenciar — arquivos não removidos acumulam
-      // espaço no dispositivo do técnico (Bug 15).
-      await FileSystem.deleteAsync(dados.uri, { idempotent: true }).catch((err) => {
-        console.warn('[SyncService] Falha ao remover arquivo temporário de foto:', dados.uri, err?.message);
-      });
       return resultado;
     }
 
@@ -158,4 +164,12 @@ async function _despachar(tipo, payload, clientUuid) {
       // Tipo desconhecido — não tenta reenviar, remove da fila
       throw Object.assign(new Error(`Tipo de fila desconhecido: ${tipo}`), { status: 400 });
   }
+}
+
+async function limparFotoLocal(item) {
+  if (item.tipo !== 'FOTO_OS') return;
+  try {
+    const { uri } = JSON.parse(item.payload);
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch (error) { console.warn('[SyncService] Falha ao limpar foto já sincronizada:', error?.message); }
 }

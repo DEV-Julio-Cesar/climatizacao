@@ -38,7 +38,7 @@ router.patch('/os/:id/execucao',    permitir('OS_EXECUTAR'),   validarExecucaoOs
 // ── Eventos de campo ────────────────────────────────────────────────────────
 router.post('/os/:id/eventos',      permitir('OS_EXECUTAR'),   validarEventoOs,    OsEventoController.registrarEvento);
 router.post('/os/:id/retorno',      permitir('OS_EXECUTAR'),                       OsEventoController.criarRetorno);
-router.patch('/os/:id/agendar',     permitir('OS_EXECUTAR'),                       OsEventoController.agendarVisita);
+router.patch('/os/:id/agendar',     permitir('OS_REAGENDAR'),                     OsEventoController.agendarVisita);
 
 // ── Fotos ───────────────────────────────────────────────────────────────────
 router.post('/os/fotos',            permitir('OS_EXECUTAR'),   upload.single('imagem'), FotoController.upload);

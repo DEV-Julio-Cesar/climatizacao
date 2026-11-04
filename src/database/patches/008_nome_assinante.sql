@@ -1,0 +1,1 @@
+ALTER TABLE os_fotos ADD COLUMN IF NOT EXISTS assinante_nome VARCHAR(150);

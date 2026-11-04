@@ -45,7 +45,7 @@ async function renovarSessao() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!response.ok) throw Object.assign(new Error('Sessão expirada.'), { status: 401 });
+    if (!response.ok) throw Object.assign(new Error('Não foi possível renovar a sessão.'), { status: response.status });
 
     const dados = await response.json();
     await SecureStore.setItemAsync('climasaas_token', dados.token);
@@ -105,6 +105,17 @@ function normalizarErro(error) {
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const api = {
+  async solicitarRecuperacao(email){
+    try{return await parse(await fetchComTimeout(`${BASE_URL}/auth/senha/solicitar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}));}
+    catch(error){normalizarErro(error);}
+  },
+  async logout() {
+    const refresh_token = await getRefreshToken();
+    const resposta = await fetchComTimeout(`${BASE_URL}/auth/refresh/logout`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token }),
+    });
+    return parse(resposta);
+  },
   async login(email, senha) {
     try {
       const response = await fetchComTimeout(`${BASE_URL}/login`, {
@@ -128,7 +139,7 @@ export const api = {
    * - Se receber 401, tenta renovar o token via refresh.
    * - Se o refresh também falhar, limpa o armazenamento e dispara onSessaoExpirada.
    */
-  async chamadaAutenticada(endpoint, metodo = 'GET', body, _tentativa = 0) {
+  async chamadaAutenticada(endpoint, metodo = 'GET', body, _tentativa = 0, idempotencyKey, formato = 'json') {
     let tokenAtual;
     try { tokenAtual = await getToken(); } catch {
       await SecureStore.deleteItemAsync('climasaas_token');
@@ -143,6 +154,7 @@ export const api = {
         headers: {
           Authorization: `Bearer ${tokenAtual}`,
           'Content-Type': 'application/json',
+          ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
@@ -154,8 +166,9 @@ export const api = {
     if (response.status === 401 && _tentativa === 0) {
       try {
         await renovarSessao();
-        return this.chamadaAutenticada(endpoint, metodo, body, 1);
-      } catch {
+        return this.chamadaAutenticada(endpoint, metodo, body, 1, idempotencyKey, formato);
+      } catch (error) {
+        if (error.status !== 401 && error.status !== 400) throw error;
         await SecureStore.deleteItemAsync('climasaas_token');
         await SecureStore.deleteItemAsync('climasaas_refresh_token');
         aoExpirarSessao?.();
@@ -163,7 +176,21 @@ export const api = {
       }
     }
 
+    if (formato === 'pdf' && response.ok) {
+      if (!response.headers.get('content-type')?.toLowerCase().includes('application/pdf')) {
+        throw new Error('O servidor não retornou um PDF. Tente novamente.');
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') {
+        throw new Error('O PDF recebido está inválido. Tente novamente.');
+      }
+      return bytes;
+    }
     return parse(response);
+  },
+
+  baixarOrcamentoPdf(id) {
+    return this.chamadaAutenticada(`/orcamentos/${id}/pdf`, 'GET', undefined, 0, undefined, 'pdf');
   },
 
   async uploadFoto(osId, tipo, arquivo, metadados = {}) {
@@ -211,7 +238,8 @@ export const api = {
           headers: { Authorization: `Bearer ${novoToken}` },
           body: form2,
         });
-      } catch {
+      } catch (error) {
+        if (error.status !== 401 && error.status !== 400) throw error;
         await SecureStore.deleteItemAsync('climasaas_token');
         await SecureStore.deleteItemAsync('climasaas_refresh_token');
         aoExpirarSessao?.();

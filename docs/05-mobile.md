@@ -1,5 +1,9 @@
 # 05 — Aplicativo Mobile
 
+> Última melhoria: [nome na assinatura/PDF, galeria e expansão do tema](./14-mobile-assinatura-galeria-tema.md). Tema ainda parcial nas telas secundárias.
+
+> Atualização: logout centralizado, pagamentos com chave de reenvio, visitas de contrato com técnico/horário, recuperação de legado e lembretes por conta estão no [lote 13](./13-implementacao-pendencias.md). A fila interrompe o lote em falha para preservar dependências; não descarta operações após cinco erros. Tema escuro ainda é parcial.
+
 **Tecnologia:** React Native + Expo SDK 57  
 **Plataforma alvo:** Android (APK/AAB via EAS). iOS possível mas não configurado.  
 **Público:** Técnicos de campo e gestores usando celular.

@@ -1,3 +1,4 @@
+import { useScreenStyles } from '../../styles/useScreenStyles';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View, TouchableOpacity, Text, Image, StyleSheet,
@@ -9,7 +10,6 @@ import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
-import { colors, shadow } from '../../styles/theme';
 import { enfileirar } from '../../database/sqlite';
 
 // Tipos de foto permitidos pelo servidor (exceto ASSINATURA — tem tela própria)
@@ -27,7 +27,7 @@ const ICONES_TIPO = {
   EVIDENCIA: 'camera-outline',
 };
 
-export default function CameraOS({ route, navigation }) {
+export default function CameraOS({ route, navigation }) { const { colors, styles: s } = useScreenStyles(createStyles);
   const { os_id, tipo_inicial = 'EVIDENCIA' } = route.params;
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -230,21 +230,21 @@ export default function CameraOS({ route, navigation }) {
   );
 }
 
-const s = StyleSheet.create({
+const createStyles = (colors, shadow) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
   permission: { textAlign: 'center', marginBottom: 18, color: colors.text },
   guide: {
     flexDirection: 'row', alignItems: 'center', gap: 13,
-    padding: 16, backgroundColor: '#fff',
+    padding: 16, backgroundColor: colors.surface,
     borderBottomWidth: 1, borderColor: colors.border,
   },
-  step: { backgroundColor: '#E4F4F8', borderRadius: 12, padding: 9 },
+  step: { backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 9 },
   label: { color: colors.text, fontSize: 17, fontWeight: '800' },
   hint: { color: colors.muted, fontSize: 12, marginTop: 2 },
 
   // Seletor de tipo
-  tipoScroll: { flexGrow: 0, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: colors.border },
+  tipoScroll: { flexGrow: 0, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border },
   tipoRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
   tipoChip: {
     paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20,
@@ -267,7 +267,7 @@ const s = StyleSheet.create({
     width: 76, height: 76, borderRadius: 38,
     borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
   },
-  capture: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
+  capture: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.surface },
 
   // Pré-visualização
   previewWrap: { flex: 1, margin: 12, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.navy },
@@ -278,7 +278,7 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.success,
   },
   comment: {
-    marginHorizontal: 12, backgroundColor: '#fff', borderWidth: 1,
+    marginHorizontal: 12, backgroundColor: colors.surface, borderWidth: 1,
     borderColor: colors.border, borderRadius: 12, padding: 13, color: colors.text,
   },
   geo: { marginHorizontal: 15, marginTop: 6, fontSize: 11, color: colors.success, fontWeight: '700' },
@@ -287,7 +287,7 @@ const s = StyleSheet.create({
     flex: 1, minHeight: 54, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
   },
-  secondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border },
+  secondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   secondaryText: { color: colors.text, fontWeight: '800' },
   green: { backgroundColor: colors.success },
   smallButton: { backgroundColor: colors.primary, padding: 14, borderRadius: 10 },

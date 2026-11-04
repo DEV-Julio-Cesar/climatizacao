@@ -1,3 +1,4 @@
+import { useScreenStyles } from '../../styles/useScreenStyles';
 import React, { useCallback, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, TextInput, Linking, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -5,14 +6,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { api, BASE_URL } from '../../services/api';
-import { colors, shadow } from '../../styles/theme';
 
 function urlLocal(pdfUrl) {
-  const file = pdfUrl?.split('/uploads/')[1];
-  return file ? `${BASE_URL}/uploads/${file}` : null;
+  if (!pdfUrl) return null;
+  const caminho = pdfUrl.match(/\/arquivos\/ordens\/[^?#]+\.pdf(?:\?[^#]*)?$/)?.[0];
+  return caminho ? `${BASE_URL}${caminho}` : null;
 }
 
-export default function Finalizadas() {
+export default function Finalizadas() { const { colors, styles: styles } = useScreenStyles(createStyles);
   const [ordens, setOrdens] = useState([]); const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false);
   const carregar = useCallback(async (termo = '') => {
@@ -23,12 +24,16 @@ export default function Finalizadas() {
   useFocusEffect(useCallback(() => { carregar(busca); }, [carregar]));
 
   const abrir = async (os) => {
-    const url = urlLocal(os.pdf_url);
+    let atualizada;
+    try { atualizada = await api.chamadaAutenticada(`/os/${os.id}`); } catch (e) { return Alert.alert('PDF', e.message); }
+    const url = urlLocal(atualizada.pdf_url);
     if (!url) return Alert.alert('PDF indisponível', 'Esta O.S. ainda não possui um PDF gerado.');
     try { await Linking.openURL(url); } catch (error) { Alert.alert('PDF', 'Não foi possível abrir o documento.'); }
   };
   const compartilhar = async (os) => {
-    const url = urlLocal(os.pdf_url);
+    let atualizada;
+    try { atualizada = await api.chamadaAutenticada(`/os/${os.id}`); } catch (e) { return Alert.alert('PDF', e.message); }
+    const url = urlLocal(atualizada.pdf_url);
     if (!url) return Alert.alert('PDF indisponível', 'Esta O.S. ainda não possui um PDF gerado.');
     try {
       const destino = `${FileSystem.cacheDirectory}OS_${os.id}.pdf`;
@@ -56,10 +61,10 @@ export default function Finalizadas() {
   </View>;
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, search: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 16, marginBottom: 4, paddingHorizontal: 13, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, borderRadius: 15, ...shadow }, searchInput: { flex: 1, paddingVertical: 14, color: colors.text }, list: { padding: 16, paddingTop: 12, paddingBottom: 30 },
+const createStyles = (colors, shadow) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, search: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 16, marginBottom: 4, paddingHorizontal: 13, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 15, ...shadow }, searchInput: { flex: 1, paddingVertical: 14, color: colors.text }, list: { padding: 16, paddingTop: 12, paddingBottom: 30 },
   summary: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }, summaryIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#E4F7F1', alignItems: 'center', justifyContent: 'center' }, summaryNumber: { color: colors.text, fontSize: 18, fontWeight: '900' }, summaryText: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  card: { backgroundColor: '#fff', borderRadius: 18, padding: 17, marginBottom: 13, borderWidth: 1, borderColor: colors.border, ...shadow }, top: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }, order: { color: colors.muted, fontSize: 11, fontWeight: '800' }, service: { color: colors.text, fontWeight: '900', fontSize: 17, marginTop: 5 }, done: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, backgroundColor: '#E4F7F1', borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 }, doneText: { color: colors.success, fontSize: 10, fontWeight: '800' },
-  info: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 10 }, infoText: { color: colors.muted, flex: 1, fontSize: 13 }, actions: { flexDirection: 'row', gap: 9, marginTop: 17, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#EDF2F4' }, openButton: { flex: .85, minHeight: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }, openText: { color: colors.primary, fontWeight: '800', fontSize: 12 }, shareButton: { flex: 1.25, minHeight: 46, borderRadius: 12, backgroundColor: colors.primary, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }, shareText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 17, marginBottom: 13, borderWidth: 1, borderColor: colors.border, ...shadow }, top: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }, order: { color: colors.muted, fontSize: 11, fontWeight: '800' }, service: { color: colors.text, fontWeight: '900', fontSize: 17, marginTop: 5 }, done: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, backgroundColor: '#E4F7F1', borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 }, doneText: { color: colors.success, fontSize: 10, fontWeight: '800' },
+  info: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 10 }, infoText: { color: colors.muted, flex: 1, fontSize: 13 }, actions: { flexDirection: 'row', gap: 9, marginTop: 17, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.divider }, openButton: { flex: .85, minHeight: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }, openText: { color: colors.primary, fontWeight: '800', fontSize: 12 }, shareButton: { flex: 1.25, minHeight: 46, borderRadius: 12, backgroundColor: colors.primary, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }, shareText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   empty: { alignItems: 'center', paddingVertical: 70 }, emptyTitle: { color: colors.muted, fontWeight: '700', marginTop: 10 },
 });

@@ -1,5 +1,7 @@
 # Análise de Qualidade — ClimaSaaS
 
+> Análise histórica: várias correções descritas abaixo já foram aplicadas. Consulte [estado atual e validação](./10-correcoes-e-validacao.md) antes de usar esta lista como backlog.
+
 ---
 
 ## 1. O que compõe esse software?

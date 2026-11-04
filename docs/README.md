@@ -3,6 +3,13 @@
 Índice central da documentação técnica do sistema ClimaSaaS —  
 plataforma SaaS para gestão de serviços de climatização (ar-condicionado).
 
+Estado atual: [correções, validação e implantação](./10-correcoes-e-validacao.md).
+Validação de desenvolvimento: [comando rápido e CI paralelo](./11-validacao-rapida.md).
+Próximas entregas: [pendências atuais após revisão do código](./12-pendencias-atuais.md).
+Implementação mais recente: [correções e novos fluxos do lote 13](./13-implementacao-pendencias.md).
+Mobile atualizado: [assinatura com nome, galeria e tema](./14-mobile-assinatura-galeria-tema.md).
+Recuperação e tempo real: [Gmail, redefinição de senha e SSE](./15-recuperacao-senha-tempo-real.md).
+
 ---
 
 ## Arquivos desta pasta
@@ -89,8 +96,7 @@ Detalhado em [04-fluxo-os.md](./04-fluxo-os.md).
 
 | Arquivo | Conteúdo |
 |---|---|
-| `DEPLOY_AWS_EC2_UBUNTU.md` | Passo a passo para subir na AWS EC2 Ubuntu |
-| `DEPLOY.md` | Deploy no Render (configuração atual de produção) |
+| [10-correcoes-e-validacao.md](./10-correcoes-e-validacao.md) | Correções recentes, validação e sequência de implantação |
 | `Dockerfile` | Imagem Docker multi-stage para containerização |
 | `.github/workflows/deploy-aws.yml` | CI/CD GitHub Actions → AWS ECS |
 | `src/database/migration.sql` | Schema completo do banco |

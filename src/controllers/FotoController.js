@@ -3,6 +3,7 @@ const db = require('../config/database');
 const OsModel = require('../models/OsModel');
 const { validarMagicBytes } = require('../config/upload');
 const logger = require('../config/logger');
+const { nomeAssinanteSchema } = require('../validators/assinaturaValidator');
 
 const TIPOS = ['ANTES', 'DEPOIS', 'ASSINATURA', 'EVIDENCIA'];
 
@@ -20,6 +21,12 @@ class FotoController {
       const latitude = req.body.latitude === undefined || req.body.latitude === '' ? null : Number(req.body.latitude);
       const longitude = req.body.longitude === undefined || req.body.longitude === '' ? null : Number(req.body.longitude);
       const clientUuid = String(req.body.client_uuid || '').trim().slice(0, 80) || null;
+      let assinanteNome = null;
+      if (req.body.assinante_nome !== undefined) {
+        const nome = nomeAssinanteSchema.safeParse(req.body.assinante_nome);
+        if (tipo !== 'ASSINATURA' || !nome.success) return res.status(400).json({ erro: 'Informe o nome do responsável pela assinatura (3 a 150 caracteres).' });
+        assinanteNome = nome.data;
+      }
 
       // Bug 13 — validar capturada_em antes de passar ao banco como timestamptz.
       // Uma string malformada causaria erro 500 no COALESCE($7::timestamptz,NOW()).
@@ -36,6 +43,13 @@ class FotoController {
       if (!os || (!['GESTOR', 'ADMIN'].includes(req.usuarioLogado.perfil) && os.tecnico_id !== req.usuarioLogado.usuario_id)) {
         return res.status(403).json({ erro: 'Acesso negado a esta O.S.' });
       }
+      if (clientUuid) {
+        const existente = await db.query('SELECT id,tipo,url,comentario,latitude,longitude,capturada_em,assinante_nome FROM os_fotos WHERE client_uuid=$1 AND os_id=$2', [clientUuid,osId]);
+        if (existente.rows[0]) {
+          if (existente.rows[0].tipo !== tipo || (existente.rows[0].assinante_nome || null) !== assinanteNome) return res.status(409).json({ erro: 'Identificador de foto já utilizado com outros dados.' });
+          return res.status(200).json({ mensagem: 'Foto já sincronizada.', foto: existente.rows[0] });
+        }
+      }
       if (os.status !== 'EM_ANDAMENTO') {
         return res.status(409).json({ erro: 'Faça o check-in antes de registrar fotos.' });
       }
@@ -49,20 +63,17 @@ class FotoController {
       }
       const baseUrl = process.env.APP_URL || (process.env.RENDER_EXTERNAL_HOSTNAME
         ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : `${req.protocol}://${req.get('host')}`);
-      if (clientUuid) {
-        const existente = await db.query('SELECT id,tipo,url,comentario,latitude,longitude,capturada_em FROM os_fotos WHERE client_uuid=$1', [clientUuid]);
-        if (existente.rows[0]) return res.status(200).json({ mensagem: 'Foto já sincronizada.', foto: existente.rows[0] });
-      }
       const storageKey = crypto.randomUUID();
       const url = `${baseUrl}/arquivos/fotos/${storageKey}`;
       const result = await db.query(
-        `INSERT INTO os_fotos (os_id,tipo,url,comentario,latitude,longitude,capturada_em,client_uuid,storage_key,mime_type,conteudo)
-         VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,NOW()),$8,$9,$10,$11)
-         RETURNING id,tipo,url,comentario,latitude,longitude,capturada_em`,
-        [osId, tipo, url, comentario, latitude, longitude, capturadaEm, clientUuid, storageKey, req.file.mimetype, req.file.buffer]
+        `INSERT INTO os_fotos (os_id,tipo,url,comentario,latitude,longitude,capturada_em,client_uuid,storage_key,mime_type,conteudo,assinante_nome)
+         VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,NOW()),$8,$9,$10,$11,$12)
+         RETURNING id,tipo,url,comentario,latitude,longitude,capturada_em,assinante_nome`,
+        [osId, tipo, url, comentario, latitude, longitude, capturadaEm, clientUuid, storageKey, req.file.mimetype, req.file.buffer, assinanteNome]
       );
       return res.status(201).json({ mensagem: 'Upload realizado.', foto: result.rows[0] });
     } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ erro: 'Identificador de foto já utilizado. Atualize os dados antes de reenviar.' });
       logger.erro('foto.upload', { request_id: req.id, erro_mensagem: error.message });
       return res.status(500).json({ erro: 'Falha ao processar o upload.' });
     }

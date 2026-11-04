@@ -31,7 +31,8 @@ class OsAgendaController {
 
   async listarTodas(req, res) {
     try {
-      return res.json(await OsModel.listarTodas(req.usuarioLogado.empresa_id));
+      const u = req.usuarioLogado;
+      return res.json(await OsModel.listarTodas(u.empresa_id, ['GESTOR', 'ADMIN'].includes(u.perfil) ? null : u.usuario_id));
     } catch {
       return res.status(500).json({ erro: 'Falha ao listar ordens de serviço.' });
     }
@@ -42,7 +43,7 @@ class OsAgendaController {
       typeof req.query.busca === 'string' ? req.query.busca.slice(0, 100) : '';
     try {
       return res.json(
-        await OsModel.listarFinalizadas(req.usuarioLogado.empresa_id, busca),
+        await OsModel.listarFinalizadas(req.usuarioLogado.empresa_id, busca, ['GESTOR', 'ADMIN'].includes(req.usuarioLogado.perfil) ? null : req.usuarioLogado.usuario_id),
       );
     } catch (error) {
       logger.erro('os.finalizadas', { request_id: req.id, erro_mensagem: error.message });

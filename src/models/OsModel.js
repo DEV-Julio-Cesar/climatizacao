@@ -61,11 +61,15 @@ class OsModel {
       `SELECT os.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.endereco AS cliente_endereco,
               c.cep AS cliente_cep, c.cidade AS cliente_cidade, c.estado AS cliente_estado,
               c.latitude, c.longitude, u.nome AS tecnico_nome, a.marca AS aparelho_marca,
-              a.modelo AS aparelho_modelo, a.capacidade AS aparelho_capacidade
+              a.modelo AS aparelho_modelo, a.capacidade AS aparelho_capacidade,
+              fd.tentativas AS documento_tentativas, fd.concluido_em AS documento_concluido_em,
+              CASE WHEN fd.os_id IS NULL THEN NULL WHEN fd.concluido_em IS NOT NULL THEN 'CONCLUIDO'
+                WHEN fd.ultimo_erro IS NOT NULL THEN 'REAGENDADO' ELSE 'PENDENTE' END AS documento_status
        FROM ordens_servico os
        JOIN clientes c ON c.id=os.cliente_id AND c.empresa_id=os.empresa_id
        JOIN usuarios u ON u.id=os.tecnico_id AND u.empresa_id=os.empresa_id
        LEFT JOIN aparelhos a ON a.id=os.aparelho_id
+       LEFT JOIN fila_documentos fd ON fd.os_id=os.id AND fd.empresa_id=os.empresa_id
        WHERE os.id=$1 AND os.empresa_id=$2 AND os.deleted_at IS NULL`,
       [id, empresaId],
     );
@@ -100,7 +104,7 @@ class OsModel {
         [id],
       ),
       db.query(
-        "SELECT id,tipo,url,comentario,latitude,longitude,capturada_em,created_at FROM os_fotos WHERE os_id=$1 ORDER BY capturada_em,created_at",
+        "SELECT id,tipo,url,comentario,latitude,longitude,capturada_em,created_at,assinante_nome FROM os_fotos WHERE os_id=$1 ORDER BY capturada_em,created_at",
         [id],
       ),
       db.query(
@@ -260,7 +264,7 @@ class OsModel {
     return result.rows;
   }
 
-  async listarTodas(empresaId) {
+  async listarTodas(empresaId, tecnicoId = null) {
     const result = await db.query(
       `SELECT os.*,c.nome AS cliente_nome,c.telefone AS cliente_telefone,c.endereco AS cliente_endereco,
               c.cidade AS cliente_cidade,c.estado AS cliente_estado,u.nome AS tecnico_nome,
@@ -270,13 +274,14 @@ class OsModel {
        JOIN usuarios u ON u.id = os.tecnico_id
        LEFT JOIN aparelhos a ON a.id=os.aparelho_id
        WHERE os.empresa_id = $1 AND os.deleted_at IS NULL
+         AND ($2::int IS NULL OR os.tecnico_id=$2)
        ORDER BY os.agendado_para NULLS LAST, os.created_at DESC`,
-      [empresaId],
+      [empresaId, tecnicoId],
     );
     return result.rows;
   }
 
-  async listarFinalizadas(empresaId, busca = "") {
+  async listarFinalizadas(empresaId, busca = "", tecnicoId = null) {
     const termo = `%${busca.trim()}%`;
     const result = await db.query(
       `SELECT os.id, os.tipo_servico, os.descricao_problema, os.valor_total,
@@ -290,11 +295,12 @@ class OsModel {
        JOIN usuarios u ON u.id = os.tecnico_id AND u.empresa_id = os.empresa_id
        LEFT JOIN os_fotos f ON f.os_id = os.id
        WHERE os.empresa_id = $1 AND os.status = 'FINALIZADA' AND os.deleted_at IS NULL
+         AND ($3::int IS NULL OR os.tecnico_id=$3)
          AND ($2 = '%%' OR c.nome ILIKE $2 OR os.id::text ILIKE $2)
        GROUP BY os.id, c.id, u.id
        ORDER BY os.finalizado_em DESC
        LIMIT 200`,
-      [empresaId, termo],
+      [empresaId, termo, tecnicoId],
     );
     return result.rows;
   }

@@ -1,5 +1,11 @@
 # ClimaSaaS
 
+Última entrega: [recuperação de senha com Gmail e atualizações em tempo real](docs/15-recuperacao-senha-tempo-real.md).
+
+Mobile atualizado: [assinatura, galeria e tema](docs/14-mobile-assinatura-galeria-tema.md).
+
+Última entrega: [implementação das pendências e implantação](docs/13-implementacao-pendencias.md). Aplique `npm run migrate` antes de iniciar a API atualizada.
+
 Aplicativo mobile para digitalizar o atendimento de empresas de climatização. O técnico recebe sua agenda, consulta cliente e equipamento, registra checklist e fotos, executa o serviço, coleta assinatura e finaliza a ordem de serviço. A gestão acompanha clientes, equipe, estoque, orçamentos e recebimentos.
 
 ## Problema e solução
@@ -48,6 +54,8 @@ test/                   testes automatizados da API
 
 ## Executar a API
 
+Para validar alterações durante o desenvolvimento, use `npm run validate`. O comando seleciona os componentes afetados, executa verificações independentes em paralelo e reaproveita resultados aprovados sem mudanças. `npm run validate:plan` mostra a seleção; `npm run validate:full` força testes e builds completos. O CI continua executando a validação completa. Detalhes em [validação rápida](docs/11-validacao-rapida.md).
+
 Requisitos: Node.js 20+ e PostgreSQL. Copie `.env.example` para `.env`, configure `DATABASE_URL` e `JWT_SECRET` e execute:
 
 ```powershell
@@ -79,7 +87,7 @@ npx eas-cli login
 npx eas-cli build --platform android --profile preview
 ```
 
-O perfil `preview` gera um APK instalável para a turma. O perfil `production` gera AAB para a Play Store. Veja [DEPLOY.md](DEPLOY.md) e [APRESENTACAO.md](APRESENTACAO.md).
+O perfil `preview` gera um APK instalável para a turma. O perfil `production` gera AAB para a Play Store. Veja [implantação e validação](docs/10-correcoes-e-validacao.md).
 
 Antes de executar a API atualizada, aplique `npm run migrate`. A migração cria os modelos de checklist, permissões e campos de geolocalização operacional de forma idempotente.
 

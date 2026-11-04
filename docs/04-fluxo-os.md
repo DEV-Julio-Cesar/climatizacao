@@ -1,5 +1,7 @@
 # 04 — Fluxo Completo de uma Ordem de Serviço
 
+> Atualização: a finalização confirma a OS e enfileira o documento em transação. O worker gera o PDF e envia WhatsApp posteriormente; a resposta pode conter `pdf_url: null`. Consulte novamente os detalhes da OS para obter `documento_status` e o link temporário atualizado.
+
 Documenta o caminho de ponta a ponta de uma OS, desde a criação até o envio do relatório ao cliente.
 
 ---

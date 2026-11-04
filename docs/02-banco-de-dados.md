@@ -490,3 +490,13 @@ Modelos de checklist por tipo de serviço. `empresa_id IS NULL` = padrão global
 |---|---|
 | `patches/001_senha_alterada_em.sql` | Adiciona coluna `senha_alterada_em` em `usuarios` |
 | `patches/002_lgpd_auditoria.sql` | Cria tabela `lgpd_auditoria` com índice |
+| `patches/003_sessoes.sql` | Sessões revogáveis e hash do refresh token |
+| `patches/004_fila_documentos.sql` | Fila persistente de geração/envio de documentos |
+| `patches/005_pagamentos_idempotencia.sql` | Chave de reenvio de pagamentos por empresa |
+| `patches/006_operacoes_e_alertas.sql` | Resultados idempotentes de mutações e deduplicação de alertas |
+| `patches/007_whatsapp_empresas.sql` | Número e referência de segredo WhatsApp por empresa |
+| `patches/008_nome_assinante.sql` | Nome do responsável nos metadados da assinatura |
+| `patches/009_recuperacao_senha.sql` | Tokens de recuperação e fila cifrada de e-mails |
+| `patches/010_eventos_tempo_real.sql` | Triggers para avisos de atualização por empresa |
+
+Use `npm run migrate` para aplicar schema e todos os patches em transação. O executor mantém `schema_migrations` e impede execução simultânea por lock.

@@ -38,6 +38,7 @@ mobile/.expo-export-check/
 mobile/dist/
 mobile/*.apk
 mobile/*.aab
+bundle_render.js
 
 # AWS — nunca subir arquivos com dados reais de conta/credenciais
 # task-definition.json está no repo com placeholders — crie uma cópia local

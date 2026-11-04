@@ -16,17 +16,30 @@
 
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 const STORAGE_KEY = '@climasaas/lembretes';
+async function chaveConta() {
+  const usuario=JSON.parse(await SecureStore.getItemAsync('climasaas_usuario')||'null');
+  if(!usuario?.id||!usuario?.empresa_id) throw new Error('Conta indisponível para lembretes.');
+  return `${STORAGE_KEY}:${usuario.empresa_id}:${usuario.id}`;
+}
 const ANTECEDENCIA_MS = 30 * 60 * 1000;    // 30 min antes
 const MARGEM_MINIMA_MS = 5 * 60 * 1000;    // descarta se < 5 min
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
+async function lerLegado() {
+  try {
+    const valor=JSON.parse(await AsyncStorage.getItem(STORAGE_KEY)||'{}');
+    return valor&&typeof valor==='object'?valor:{};
+  } catch { return {}; }
+}
+
 /** Lê o mapa osId → notificationId do AsyncStorage. */
 async function lerMapa() {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(await chaveConta());
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -36,7 +49,7 @@ async function lerMapa() {
 /** Persiste o mapa osId → notificationId no AsyncStorage. */
 async function salvarMapa(mapa) {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mapa));
+    await AsyncStorage.setItem(await chaveConta(), JSON.stringify(mapa));
   } catch {
     // não crítico — o pior caso é um lembrete duplicado
   }
@@ -66,6 +79,10 @@ async function garantirCanal() {
  * @param {boolean} notificacoesAtivas - Preferência do usuário em AppContext
  */
 export async function sincronizarLembretes(ordens, notificacoesAtivas) {
+  // Cancela o mapa sem dono deixado pela versão antiga.
+  const legado=await lerLegado();
+  await Promise.all(Object.values(legado).map(id=>Notifications.cancelScheduledNotificationAsync(id).catch(()=>{})));
+  await AsyncStorage.removeItem(STORAGE_KEY);
   // Se o usuário desativou notificações, cancela tudo e sai
   if (!notificacoesAtivas) {
     await cancelarTodosLembretes();
@@ -165,10 +182,12 @@ export async function sincronizarLembretes(ordens, notificacoesAtivas) {
  */
 export async function cancelarTodosLembretes() {
   const mapa = await lerMapa();
+  const legado=await lerLegado();
   await Promise.all(
-    Object.values(mapa).map((id) =>
+    [...Object.values(mapa),...Object.values(legado)].map((id) =>
       Notifications.cancelScheduledNotificationAsync(id).catch(() => {}),
     ),
   );
+  await AsyncStorage.removeItem(await chaveConta());
   await AsyncStorage.removeItem(STORAGE_KEY);
 }

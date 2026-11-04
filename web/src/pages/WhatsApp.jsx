@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
+import {useRealtimeRefresh} from '../hooks/useRealtimeRefresh';
 import '../whatsapp.css';
 import '../whatsapp-tabs.css';
 
@@ -33,8 +34,8 @@ export default function WhatsApp() {
     } catch (e) { setErro(e.response?.data?.erro || 'Falha ao abrir conversa.'); }
   }, [carregarConversas]);
 
-  useEffect(() => { carregarConversas(); const timer = setInterval(carregarConversas, 8000); return () => clearInterval(timer); }, [carregarConversas]);
-  useEffect(() => { if (!selecionada) return undefined; const timer = setInterval(() => abrir(selecionada, true), 5000); return () => clearInterval(timer); }, [selecionada, abrir]);
+  useEffect(() => { carregarConversas(); }, [carregarConversas]);
+  useRealtimeRefresh('whatsapp',async()=>{await carregarConversas();if(selecionada)await abrir(selecionada,true);});
   useEffect(() => { fimMensagens.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [mensagens, selecionada?.id]);
 
   const contagem = useMemo(() => conversas.reduce((total, item) => ({ ...total, [item.fila_status || 'AUTOMACAO']: (total[item.fila_status || 'AUTOMACAO'] || 0) + 1 }), {}), [conversas]);

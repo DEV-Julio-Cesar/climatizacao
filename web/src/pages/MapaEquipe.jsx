@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
 import L from 'leaflet';
 import { api } from '../services/api';
+import {useRealtimeRefresh} from '../hooks/useRealtimeRefresh';
 
 // Corrige ícones padrão do Leaflet quando bundled com Vite/Webpack
 delete L.Icon.Default.prototype._getIconUrl;
@@ -18,6 +19,8 @@ export default function MapaEquipe() {
   const [itens, setItens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [versao,setVersao]=useState(0);
+  useRealtimeRefresh('agenda',()=>setVersao(v=>v+1));
 
   useEffect(() => {
     let cancelado = false;
@@ -49,7 +52,7 @@ export default function MapaEquipe() {
 
     carregar();
     return () => { cancelado = true; };
-  }, []);
+  }, [versao]);
 
   // Centro do mapa: primeiro ponto com coordenadas, ou São Paulo
   const centro = itens[0]

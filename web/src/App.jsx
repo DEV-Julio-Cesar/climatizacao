@@ -1,6 +1,9 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Login from './pages/Login';
-import { api } from './services/api';
+import RecuperarSenha from './pages/RecuperarSenha';
+import { SessionProvider } from './context/SessionContext';
+import {conectarEventos} from './services/eventos';
+import { api, definirToken, limparSessao, renovarSessao, encerrarSessao } from './services/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
@@ -14,9 +17,10 @@ const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Tecnicos = lazy(() => import('./pages/Tecnicos'));
 const WhatsApp = lazy(() => import('./pages/WhatsApp'));
 const MinhaConta = lazy(() => import('./pages/MinhaConta'));
+const Central = lazy(() => import('./pages/Central'));
 
 const menus = [
-  { id: 'dashboard', label: 'Visão geral', icon: '▦', permission: 'GESTAO_VISUALIZAR', component: Dashboard },
+  { id: 'dashboard', label: 'Visão geral', icon: '▦', allPermissions: ['GESTAO_VISUALIZAR','FINANCEIRO_VISUALIZAR'], component: Dashboard },
   { id: 'despacho', label: 'Agendamentos', icon: '▣', permission: 'AGENDA_VISUALIZAR', component: PainelDespacho },
   { id: 'mapa', label: 'Mapa da equipe', icon: '⌖', permission: 'GESTAO_VISUALIZAR', component: MapaEquipe },
   { id: 'clientes', label: 'Clientes', icon: '♙', permission: 'CLIENTES_VISUALIZAR', component: Clientes },
@@ -28,25 +32,36 @@ const menus = [
   { id: 'whatsapp', label: 'Atendimento', icon: '●', permission: 'ATENDIMENTO_VISUALIZAR', component: WhatsApp },
   { id: 'config', label: 'Configurações', icon: '⚙', permission: 'GESTAO_GERENCIAR', component: Configuracoes },
   { id: 'conta', label: 'Minha conta', icon: '○', component: MinhaConta },
+  { id: 'central', label: 'Notificações e documentos', icon: '◇', component: Central },
 ];
-
-function readUser() {
-  try { return JSON.parse(localStorage.getItem('climasaas_usuario') || '{}'); }
-  catch { return {}; }
-}
 
 function canAccess(user, item) {
   const permissions = user?.permissoes;
-  if (!Array.isArray(permissions) || permissions.includes('*')) return true;
+  if (permissions?.includes('*')) return true;
+  if (!Array.isArray(permissions)) return false;
+  if (item.allPermissions) return item.allPermissions.every(permission=>permissions.includes(permission));
   if (item.permissions) return item.permissions.some((permission) => permissions.includes(permission));
   return !item.permission || permissions.includes(item.permission);
 }
 
-export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('climasaas_token'));
-  const [user, setUser] = useState(readUser);
+export default function App(){
+  const ler=()=>location.hash.startsWith('#redefinir-senha')?new URLSearchParams(location.hash.split('?')[1]||'').get('token')||'':null;
+  const [tokenReset,setTokenReset]=useState(ler);
+  useEffect(()=>{
+    const alterar=()=>{const token=ler();setTokenReset(atual=>token===''&&atual!==null?atual:token);if(token)history.replaceState(null,'',`${location.pathname}${location.search}#redefinir-senha`);};
+    alterar();window.addEventListener('hashchange',alterar);return()=>window.removeEventListener('hashchange',alterar);
+  },[]);
+  if(tokenReset!==null)return <RecuperarSenha token={tokenReset} onVoltar={()=>{location.hash='login';setTokenReset(null);}}/>;
+  return <Painel/>;
+}
+
+function Painel() {
+  const [token, setToken] = useState(null);
+  const [restaurando, setRestaurando] = useState(true);
+  const [user, setUser] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [online, setOnline] = useState(true);
+  useEffect(()=>{if(token)return conectarEventos();},[token]);
   const availableMenus = useMemo(() => menus.filter((item) => canAccess(user, item)), [user]);
   const initialPage = () => location.hash.slice(1) || availableMenus[0]?.id || 'dashboard';
   const [page, setPage] = useState(initialPage);
@@ -64,7 +79,15 @@ export default function App() {
   }, [availableMenus, page]);
 
   useEffect(() => {
+    let ativo = true;
+    renovarSessao().then(dados => { if (ativo) { setToken(dados.token); setUser(dados.usuario); } })
+      .catch(() => {}).finally(() => { if (ativo) setRestaurando(false); });
+    return () => { ativo = false; };
+  }, []);
+
+  useEffect(() => {
     const expirada = () => {
+      limparSessao();
       localStorage.removeItem('climasaas_token');
       localStorage.removeItem('climasaas_refresh_token');
       localStorage.removeItem('climasaas_usuario');
@@ -77,15 +100,15 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return undefined;
-    const verificar = async () => { try { await api.get('/health', { timeout:5000 }); setOnline(true); } catch { setOnline(false); } };
+    const verificar = async () => { try { const { data } = await api.get('/conta/sessao', { timeout:5000 }); setUser(data.usuario); setOnline(true); } catch { setOnline(false); } };
     verificar(); const timer = setInterval(verificar, 30000);
     return () => clearInterval(timer);
   }, [token]);
 
+  if (restaurando) return <div className="loading">Restaurando sessão...</div>;
   if (!token) {
     return <Login onLogin={(newToken, newUser) => {
-      localStorage.setItem('climasaas_token', newToken);
-      localStorage.setItem('climasaas_usuario', JSON.stringify(newUser));
+      definirToken(newToken);
       setUser(newUser);
       setToken(newToken);
     }} />;
@@ -93,14 +116,16 @@ export default function App() {
 
   const current = availableMenus.find((item) => item.id === page) || availableMenus[0];
   const CurrentPage = current?.component;
-  const logout = () => {
+  const logout = async () => {
+    try { await encerrarSessao(); } catch { window.alert('Não foi possível encerrar a sessão. Tente novamente.'); return; }
     localStorage.removeItem('climasaas_token');
     localStorage.removeItem('climasaas_refresh_token');
     localStorage.removeItem('climasaas_usuario');
     setToken(null);
+    setUser({});
   };
 
-  return <div className="shell">
+  return <SessionProvider usuario={user}><div className="shell">
     <aside className={menuOpen ? 'menu-open' : ''}>
       <div className="brand"><span className="brand-mark">❄</span><span>ClimaSaaS</span></div>
       <button className="menu-close" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}>×</button>
@@ -128,5 +153,5 @@ export default function App() {
         {CurrentPage ? <CurrentPage /> : <div className="empty">Você não possui módulos disponíveis.</div>}
       </Suspense>
     </main>
-  </div>;
+  </div></SessionProvider>;
 }

@@ -1,3 +1,5 @@
+import { useSession } from '../../context/SessionContext';
+import {useRealtimeRefresh} from '../../hooks/useRealtimeRefresh';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, momentLocalizer } from "react-big-calendar";
 import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
@@ -69,26 +71,12 @@ export default function PainelDespacho() {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
-  const usuario = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("climasaas_usuario") || "{}");
-    } catch {
-      return {};
-    }
-  }, []);
+  const { pode } = useSession();
+  const podeCriar = pode('OS_CRIAR');
+  const podeReagendar = pode('OS_REAGENDAR');
 
-  const permissoes = usuario.permissoes || [];
-  const podeCriar =
-    !Array.isArray(permissoes) ||
-    permissoes.includes("*") ||
-    permissoes.includes("OS_CRIAR");
-  const podeReagendar =
-    !Array.isArray(permissoes) ||
-    permissoes.includes("*") ||
-    permissoes.includes("OS_REAGENDAR");
-
-  const carregar = useCallback(async () => {
-    setLoading(true);
+  const carregar = useCallback(async (silencioso=false) => {
+    if(!silencioso)setLoading(true);
     setErro("");
     try {
       const [t, o, c] = await Promise.all([
@@ -109,6 +97,7 @@ export default function PainelDespacho() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+  useRealtimeRefresh('agenda',()=>carregar(true));
 
   const eventos = useMemo(
     () =>

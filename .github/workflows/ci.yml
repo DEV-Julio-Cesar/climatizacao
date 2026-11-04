@@ -6,33 +6,65 @@ on:
   pull_request:
     branches: [master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
+  api:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: teste
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: climasaas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://teste:teste@localhost:5432/climasaas_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            web/package-lock.json
-            mobile/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Instalar API
         run: npm ci
       - name: Testar API
         run: npm test
       - name: Auditar dependências da API
         run: npm audit --omit=dev --audit-level=high
-      - name: Instalar painel
-        run: npm --prefix web ci
-      - name: Compilar painel
-        run: npm --prefix web run build
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: web
+            command: build
+          - project: mobile
+            command: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.project }}/package-lock.json
+      - name: Instalar dependências
+        run: npm --prefix ${{ matrix.project }} ci
+      - name: Validar componente
+        run: npm --prefix ${{ matrix.project }} run ${{ matrix.command }}
       - name: Auditar painel
+        if: matrix.project == 'web'
         run: npm --prefix web audit --omit=dev --audit-level=high
-      - name: Instalar aplicativo
-        run: npm --prefix mobile ci
-      - name: Validar aplicativo Expo
-        run: npm --prefix mobile run check

@@ -79,8 +79,11 @@ class PdfService {
       if (anexos.length) {
         doc.addPage().fontSize(14).text('Registros e assinatura', { underline: true }).moveDown();
         for (const anexo of anexos) {
-          if (doc.y > 620) doc.addPage();
-          doc.fontSize(11).text(anexo.tipo === 'ASSINATURA' ? 'Assinatura do cliente' : `Evidência${anexo.comentario ? ` — ${anexo.comentario}` : ''}`);
+          const titulo=anexo.tipo === 'ASSINATURA' ? 'Assinatura do cliente' : `Evidência${anexo.comentario ? ` — ${anexo.comentario}` : ''}`;
+          const altura=doc.fontSize(11).heightOfString(titulo,{width:480})+(anexo.assinante_nome?doc.fontSize(10).heightOfString(`Responsável: ${anexo.assinante_nome}`,{width:480}):0)+310;
+          if (doc.y+altura>doc.page.height-doc.page.margins.bottom) doc.addPage();
+          doc.fontSize(11).text(titulo);
+          if(anexo.tipo === 'ASSINATURA' && anexo.assinante_nome) doc.fontSize(10).text(`Responsável: ${anexo.assinante_nome}`);
           if(anexo.capturada_em)doc.fontSize(9).fillColor('#52606D').text(`Capturada em ${new Date(anexo.capturada_em).toLocaleString('pt-BR')}${anexo.latitude ? ` · GPS ${anexo.latitude}, ${anexo.longitude}` : ''}`).fillColor('#000');
           try { doc.image(anexo.path, { fit: [480, 260], align: 'center' }).moveDown(); }
           catch (_error) { doc.text('Não foi possível renderizar esta imagem.').moveDown(); }

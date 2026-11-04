@@ -1,3 +1,4 @@
+import { useSession } from '../context/SessionContext';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
@@ -46,17 +47,6 @@ const equipamentoVazio = {
   proxima_manutencao: "",
   observacoes: "",
 };
-const podeGerenciar = () => {
-  try {
-    const p =
-      JSON.parse(localStorage.getItem("climasaas_usuario") || "{}")
-        .permissoes || [];
-    return p.includes("*") || p.includes("CLIENTES_GERENCIAR");
-  } catch {
-    return false;
-  }
-};
-
 export default function Clientes() {
   const [items, setItems] = useState([]),
     [search, setSearch] = useState(""),
@@ -70,7 +60,8 @@ export default function Clientes() {
     [loading, setLoading] = useState(true),
     [buscandoCep, setBuscandoCep] = useState(false),
     [saving, setSaving] = useState(false);
-  const manage = podeGerenciar();
+  const { pode } = useSession();
+  const manage = pode('CLIENTES_GERENCIAR');
   const load = useCallback(async () => {
     setLoading(true);
     try {

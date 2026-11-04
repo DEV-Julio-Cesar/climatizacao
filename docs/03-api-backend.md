@@ -1,5 +1,7 @@
 # 03 — API Backend
 
+> Estado atual das rotas, permissões, idempotência, relatórios e WhatsApp: [implementação do lote 13](./13-implementacao-pendencias.md). As descrições históricas abaixo precisam ser lidas junto dessa atualização.
+
 ## Estrutura de Arquivos
 
 ```

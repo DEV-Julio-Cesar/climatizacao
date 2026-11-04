@@ -20,6 +20,7 @@ export const light = {
   success:    '#159A72',
   danger:     '#D9534F',
   warning:    '#F2A93B',
+  warningText:'#8A5800',
   background: '#F3F7F9',
   surface:    '#FFFFFF',
   surfaceAlt: '#EDF2F4',
@@ -45,6 +46,7 @@ export const dark = {
   success:    '#1FB886',
   danger:     '#E66B68',
   warning:    '#F5B85C',
+  warningText:'#F5B85C',
   background: '#0D1B2A',          // fundo escuro azulado
   surface:    '#152840',          // cards
   surfaceAlt: '#1A304A',          // inputs, chips

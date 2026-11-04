@@ -4,7 +4,7 @@
     "development": { "developmentClient": true, "distribution": "internal" },
     "preview": {
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "https://climasaas-api.onrender.com" },
+      "env": { "EXPO_PUBLIC_API_URL": "https://13-58-212-142.nip.io" },
       "android": { "buildType": "apk" }
     },
     "production": {

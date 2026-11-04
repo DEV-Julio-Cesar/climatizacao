@@ -1,3 +1,4 @@
+const { transacao } = require('../../services/OperacaoService');
 const db = require('../../config/database');
 const OsModel = require('../../models/OsModel');
 const PushService = require('../../services/PushService');
@@ -17,7 +18,7 @@ class OsEventoController {
       return res.status(400).json({ erro: 'ID inválido.' });
 
     try {
-      const atualizada = await db.transaction(async (client) => {
+      const atualizada = await transacao(req, async (client) => {
         // Bug 10 — SELECT FOR UPDATE serializa eventos simultâneos na mesma OS.
         // Garante que dois PAUSAR concorrentes não gerem duas pausas abertas.
         const lockResult = await client.query(
@@ -126,9 +127,12 @@ class OsEventoController {
 
     if (!req.body.agendado_para || Number.isNaN(Date.parse(req.body.agendado_para)))
       return res.status(400).json({ erro: 'Data do retorno inválida.' });
+    const duracao = req.body.duracao_prevista_minutos ?? 120;
+    if (!Number.isInteger(duracao) || duracao < 1 || duracao > 1440)
+      return res.status(400).json({ erro: 'Duração inválida.' });
 
     try {
-      const nova = await db.transaction(async (client) => {
+      const nova = await transacao(req, async (client) => {
         const origem = await OsModel.buscarPorId(id, usuario.empresa_id, client);
         if (!origem)
           throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
@@ -141,7 +145,7 @@ class OsEventoController {
           usuario.empresa_id,
           origem.tecnico_id,
           req.body.agendado_para,
-          req.body.duracao_prevista_minutos,
+          duracao,
         );
 
         const motivo = String(req.body.motivo || `Retorno da O.S. #${id}`)
@@ -150,8 +154,8 @@ class OsEventoController {
 
         const r = await client.query(
           `INSERT INTO ordens_servico
-             (empresa_id,cliente_id,aparelho_id,tecnico_id,tipo_servico,descricao_problema,agendado_para,retorno_de_os_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+             (empresa_id,cliente_id,aparelho_id,tecnico_id,tipo_servico,descricao_problema,agendado_para,retorno_de_os_id,duracao_prevista_minutos)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
           [
             usuario.empresa_id,
             origem.cliente_id,
@@ -161,6 +165,7 @@ class OsEventoController {
             motivo,
             req.body.agendado_para,
             id,
+            duracao,
           ],
         );
 
@@ -189,7 +194,7 @@ class OsEventoController {
         return r.rows[0];
       });
 
-      void PushService.enviar(
+      if (!req.operacaoRepetida) void PushService.enviar(
         nova.tecnico_id,
         'Visita de retorno',
         `Retorno #${nova.id} agendado.`,
@@ -205,15 +210,16 @@ class OsEventoController {
   }
 
   async agendarVisita(req, res) {
+    if (!gestor(req.usuarioLogado.perfil)) return res.status(403).json({ erro: 'Acesso restrito a gestores.' });
     const id = Number(req.params.id);
     const usuario = req.usuarioLogado;
     const quando = req.body.agendado_para;
 
-    if (!Number.isInteger(id) || !quando || Number.isNaN(Date.parse(quando)))
+    if (!Number.isInteger(id) || id <= 0 || !quando || Number.isNaN(Date.parse(quando)))
       return res.status(400).json({ erro: 'Data e horário inválidos.' });
 
     try {
-      const atualizada = await db.transaction(async (client) => {
+      const atualizada = await transacao(req, async (client) => {
         const os = await OsModel.buscarPorId(id, usuario.empresa_id, client);
         if (!os)
           throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
@@ -225,6 +231,7 @@ class OsEventoController {
             { status: 409 },
           );
 
+        await validarConflito(client, usuario.empresa_id, os.tecnico_id, quando, os.duracao_prevista_minutos, id);
         const r = await client.query(
           'UPDATE ordens_servico SET agendado_para=$1,updated_at=NOW() WHERE id=$2 AND empresa_id=$3 RETURNING *',
           [quando, id, usuario.empresa_id],
@@ -244,7 +251,7 @@ class OsEventoController {
         return r.rows[0];
       });
 
-      void PushService.enviar(
+      if (!req.operacaoRepetida) void PushService.enviar(
         atualizada.tecnico_id,
         'Visita agendada',
         `A O.S. #${id} foi agendada.`,

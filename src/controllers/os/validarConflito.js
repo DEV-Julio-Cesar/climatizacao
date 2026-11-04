@@ -18,6 +18,8 @@ async function validarConflito(
   ignorarId = null,
 ) {
   if (!inicio) return;
+  // Todas as gravações de agenda passam por este lock até o COMMIT.
+  await client.query('SELECT pg_advisory_xact_lock($1::int,$2::int)', [empresaId, tecnicoId]);
 
   const resultado = await client.query(
     `SELECT id

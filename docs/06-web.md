@@ -1,5 +1,7 @@
 # 06 — Painel Web
 
+> Atualização: a sessão usa contexto em memória e cookie HttpOnly, incluindo Clientes/Catálogo/Despacho. Há filtros/CSV no dashboard e Central de notificações/documentos. Detalhes e limitações no [lote 13](./13-implementacao-pendencias.md).
+
 **Tecnologia:** React 19 + Vite  
 **Build:** `web/dist/` servido pela API Express em `/painel/*`  
 **Público:** Gestores e administrativo (desktop/tablet)  

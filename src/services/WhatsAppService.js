@@ -8,9 +8,9 @@ const axios = require('axios');
 //   WHATSAPP_ACCESS_TOKEN     → Token de acesso (temporário para teste, permanente em produção)
 
 class WhatsAppService {
-  constructor() {
-    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    this.token         = process.env.WHATSAPP_ACCESS_TOKEN;
+  constructor(config = {}) {
+    this.phoneNumberId = config.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+    this.token         = config.token || process.env.WHATSAPP_ACCESS_TOKEN;
     this.graphVersion  = process.env.WHATSAPP_GRAPH_VERSION || 'v24.0';
     this.apiUrl        = `https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}/messages`;
     this.headers       = {
@@ -33,7 +33,7 @@ class WhatsAppService {
     };
 
     try {
-      const response = await axios.post(this.apiUrl, payload, { headers: this.headers });
+      const response = await axios.post(this.apiUrl, payload, { headers: this.headers, timeout: 30_000 });
       console.log('✅ WhatsApp texto enviado:', response.data);
       return response.data;
     } catch (error) {
@@ -79,12 +79,12 @@ class WhatsAppService {
     };
 
     try {
-      const response = await axios.post(this.apiUrl, payload, { headers: this.headers });
+      const response = await axios.post(this.apiUrl, payload, { headers: this.headers, timeout: 30_000 });
       console.log('✅ PDF enviado via WhatsApp:', response.data);
       return response.data;
     } catch (error) {
-      // Falha silenciosa: não derruba a API principal se o WhatsApp cair
       console.error('❌ Falha ao enviar PDF WhatsApp:', error.response?.data || error.message);
+      throw new Error('Falha ao enviar PDF pela Meta.');
     }
   }
 
@@ -117,3 +117,4 @@ class WhatsAppService {
 }
 
 module.exports = new WhatsAppService();
+module.exports.criarCliente = config => new WhatsAppService(config);

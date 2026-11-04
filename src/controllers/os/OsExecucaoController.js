@@ -1,3 +1,4 @@
+const { transacao } = require('../../services/OperacaoService');
 const db = require('../../config/database');
 const OsModel = require('../../models/OsModel');
 
@@ -13,8 +14,9 @@ class OsExecucaoController {
     const usuario = req.usuarioLogado;
 
     try {
-      const total = await db.transaction(async (client) => {
-        const os = await OsModel.buscarPorId(id, usuario.empresa_id, client);
+      const total = await transacao(req, async (client) => {
+        const locked = await client.query('SELECT * FROM ordens_servico WHERE id=$1 AND empresa_id=$2 AND deleted_at IS NULL FOR UPDATE', [id, usuario.empresa_id]);
+        const os = locked.rows[0];
         if (!os) throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
         if (!gestor(usuario.perfil) && os.tecnico_id !== usuario.usuario_id)
           throw Object.assign(new Error('Acesso negado.'), { status: 403 });

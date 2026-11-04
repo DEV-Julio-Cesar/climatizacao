@@ -1,13 +1,13 @@
+import { useSession } from '../context/SessionContext';
 import React,{useCallback,useEffect,useMemo,useState}from'react';
 import{api}from'../services/api';
 
 const servicoVazio={tipo:'SERVICO',nome:'',descricao:'',categoria:'',custo:'0',preco:'0',garantia_dias:'0',duracao_minutos:'',ativo:true};
 const produtoVazio={tipo:'PECA',nome:'',sku:'',codigo_barras:'',descricao:'',marca:'',fornecedor:'',categoria:'',unidade:'UN',localizacao:'',custo:'0',preco:'0',estoque:'0',estoque_minimo:'0',ativo:true};
 const unidades=['UN','PC','KG','G','L','ML','M','M2','CX','KIT','RL'];
-const podeGerenciar=()=>{try{const p=JSON.parse(localStorage.getItem('climasaas_usuario')||'{}').permissoes||[];return p.includes('*')||p.includes('ESTOQUE_GERENCIAR')}catch{return false}};
 
 export default function Catalogo(){
- const[data,setData]=useState({servicos:[],produtos:[]}),[tab,setTab]=useState('PRODUTOS'),[search,setSearch]=useState(''),[status,setStatus]=useState('ATIVOS'),[categoria,setCategoria]=useState(''),[form,setForm]=useState(null),[stock,setStock]=useState(null),[history,setHistory]=useState(null),[msg,setMsg]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);const manage=podeGerenciar();
+ const[data,setData]=useState({servicos:[],produtos:[]}),[tab,setTab]=useState('PRODUTOS'),[search,setSearch]=useState(''),[status,setStatus]=useState('ATIVOS'),[categoria,setCategoria]=useState(''),[form,setForm]=useState(null),[stock,setStock]=useState(null),[history,setHistory]=useState(null),[msg,setMsg]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);const {pode}=useSession();const manage=pode('ESTOQUE_GERENCIAR');
  const load=useCallback(async()=>{setLoading(true);try{setData((await api.get(manage?'/catalogo/gestao':'/catalogo')).data)}catch(e){setError(e.response?.data?.erro||e.message)}finally{setLoading(false)}},[manage]);useEffect(()=>{load()},[load]);
  const origem=tab==='PRODUTOS'?data.produtos:data.servicos;
  const categorias=useMemo(()=>[...new Set(origem.map(i=>i.categoria).filter(Boolean))].sort(),[origem]);

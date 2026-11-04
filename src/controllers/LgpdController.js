@@ -40,14 +40,14 @@ class LgpdController {
           [usuario_id, empresa_id],
         ),
         // Clientes criados/gerenciados pelo usuário (se gestor)
-        db.query(
-          `SELECT id, nome, telefone, email, cpf_cnpj, endereco, cidade, estado, created_at
+        ['GESTOR', 'ADMIN'].includes(req.usuarioLogado.perfil) ? db.query(
+          `SELECT id, nome, telefone, cpf_cnpj, endereco, cidade, estado, created_at
              FROM clientes
             WHERE empresa_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT 500`,
           [empresa_id],
-        ),
+        ) : Promise.resolve({ rows: [] }),
       ]);
 
       await _registrarAuditoria(usuario_id, empresa_id, 'EXPORTACAO_DADOS', req.ip);

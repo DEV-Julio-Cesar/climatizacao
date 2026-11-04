@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View, Text } from 'react-native';
+import { ActivityIndicator, Alert, View, Text } from 'react-native';
 import * as Network from 'expo-network';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
-import { colors } from './src/styles/theme';
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from './src/styles/useTheme';
 import LoginScreen from './src/screens/Login/LoginScreen';
+import EsqueciSenha from './src/screens/Login/EsqueciSenha';
 import AgendaMapa from './src/screens/Agenda/AgendaMapa';
 import MapaAtendimento from './src/screens/Agenda/MapaAtendimento';
 import MapaRota from './src/screens/Agenda/MapaRota';
@@ -39,7 +41,8 @@ import { AppProvider } from './src/context/AppContext';
 import PerfilScreen from './src/screens/Perfil/PerfilScreen';
 import Sincronizacao from './src/screens/Perfil/Sincronizacao';
 import ErrorBoundary from './src/components/ErrorBoundary';
-import { configurarSessaoExpirada } from './src/services/api';
+import { api, configurarSessaoExpirada } from './src/services/api';
+import { cancelarTodosLembretes } from './src/services/agendaLembretes';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -47,11 +50,13 @@ const Tab = createBottomTabNavigator();
 const tabIcons = { AgendaTab: 'calendar-outline', ClientesTab: 'people-outline', GestaoTab: 'stats-chart-outline', PerfilTab: 'person-circle-outline' };
 
 function AbasPrincipais({ onLogout, usuario }) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const pode = (permissao) => usuario?.permissoes?.includes('*') || usuario?.permissoes?.includes(permissao) || !Array.isArray(usuario?.permissoes);
   return <Tab.Navigator screenOptions={({ route }) => ({
     headerStyle: { backgroundColor: colors.navy }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800' },
     tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted,
-    tabBarStyle: { height: 64, paddingTop: 6, paddingBottom: 8 },
+    tabBarStyle: { backgroundColor:colors.surface, borderTopColor:colors.border, height: 64 + insets.bottom, paddingTop: 6, paddingBottom: 8 + insets.bottom },
     tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
     tabBarIcon: ({ color, size }) => <Ionicons name={tabIcons[route.name]} size={size} color={color} />,
   })}>
@@ -62,7 +67,11 @@ function AbasPrincipais({ onLogout, usuario }) {
   </Tab.Navigator>;
 }
 
-export default function App() {
+export default function App() { return <ErrorBoundary><SafeAreaProvider initialMetrics={initialWindowMetrics}><AppProvider><AppContent /></AppProvider></SafeAreaProvider></ErrorBoundary>; }
+
+function AppContent() {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [token, setToken] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [online, setOnline] = useState(true);
@@ -71,6 +80,7 @@ export default function App() {
       .then(([saved, usuarioSalvo]) => { setUsuario(usuarioSalvo ? JSON.parse(usuarioSalvo) : null); setToken(saved || null); })
       .catch(() => setToken(null));
     configurarSessaoExpirada(() => {
+      void cancelarTodosLembretes().catch(() => {});
       SecureStore.deleteItemAsync('climasaas_refresh_token').catch(() => {});
       setUsuario(null);
       setToken(null);
@@ -78,25 +88,50 @@ export default function App() {
     const subscription = Network.addNetworkStateListener((state) => setOnline(Boolean(state.isConnected) && state.isInternetReachable !== false));
     return () => { subscription.remove(); configurarSessaoExpirada(null); };
   }, []);
+  useEffect(() => {
+    if (!token || !online) return;
+    let ativo = true;
+    const atualizar = async () => {
+      try {
+        const dados = await api.chamadaAutenticada('/conta/sessao');
+        if (ativo) {
+          await SecureStore.setItemAsync('climasaas_usuario', JSON.stringify(dados.usuario));
+          setUsuario(dados.usuario);
+        }
+      } catch { /* Mantém a sessão/cache local quando a rede falha. */ }
+    };
+    void atualizar();
+    const timer = setInterval(atualizar, 60000);
+    return () => { ativo = false; clearInterval(timer); };
+  }, [token, online]);
   if (token === undefined) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator /></View>;
   return (
-    <ErrorBoundary><AppProvider><View style={{ flex:1 }}><NavigationContainer>
+    <View style={{ flex:1, backgroundColor:colors.background }}><NavigationContainer theme={{...(isDark?DarkTheme:DefaultTheme),colors:{...(isDark?DarkTheme:DefaultTheme).colors,primary:colors.primary,background:colors.background,card:colors.surface,text:colors.text,border:colors.border,notification:colors.danger}}}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{
-        headerTintColor: colors.surface,
+      <Stack.Navigator screenLayout={({ route, children }) => route.name === 'Inicio' ? children : (
+        <SafeAreaView edges={route.name === 'Login' ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
+          {children}
+        </SafeAreaView>
+      )} screenOptions={{
+        headerTintColor: '#fff',
         headerStyle: { backgroundColor: colors.navy },
         headerTitleStyle: { fontWeight: '700' },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
       }}>
         {!token ? (
+          <>
           <Stack.Screen name="Login" options={{ headerShown: false }}>
             {(props) => <LoginScreen {...props} onLogin={(novoToken, novoUsuario) => { setUsuario(novoUsuario); setToken(novoToken); }} />}
           </Stack.Screen>
+          <Stack.Screen name="EsqueciSenha" component={EsqueciSenha} options={{title:'Recuperar acesso'}}/>
+          </>
         ) : (
           <>
             <Stack.Screen name="Inicio" options={{ headerShown: false }}>
               {(props) => <AbasPrincipais {...props} usuario={usuario} onLogout={async () => {
+                try { await api.logout(); } catch { Alert.alert('Sem conexão', 'Conecte-se ao servidor para encerrar a sessão com segurança.'); return; }
+                await cancelarTodosLembretes().catch(() => {});
                 await Promise.all([
                   SecureStore.deleteItemAsync('climasaas_token'),
                   SecureStore.deleteItemAsync('climasaas_refresh_token'),
@@ -134,6 +169,6 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
-    </NavigationContainer>{!online && <View style={{ position:'absolute',left:0,right:0,bottom:0,backgroundColor:'#A86600',padding:7 }}><Text style={{ color:'#fff',fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View></AppProvider></ErrorBoundary>
+    </NavigationContainer>{!online && <View pointerEvents="none" style={{ position:'absolute',left:insets.left,right:insets.right,bottom:insets.bottom + (token ? 64 : 0),backgroundColor:'#A86600',padding:7 }}><Text style={{ color:'#fff',fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View>
   );
 }

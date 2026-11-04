@@ -1,3 +1,4 @@
+const { transacao } = require('../services/OperacaoService');
 /**
  * OsController — operações de ciclo de vida principal de uma O.S.
  *
@@ -9,11 +10,8 @@
  *   os/OsEventoController.js   — registrarEvento / criarRetorno / agendarVisita
  *   os/OsExecucaoController.js — salvarExecucao
  */
-const crypto = require('crypto');
 const db = require('../config/database');
 const OsModel = require('../models/OsModel');
-const PdfService = require('../services/PdfService');
-const WhatsAppService = require('../services/WhatsAppService');
 const PushService = require('../services/PushService');
 const validarConflito = require('./os/validarConflito');
 const logger = require('../config/logger');
@@ -38,7 +36,7 @@ class OsController {
         : usuario.usuario_id;
 
     try {
-      const novaOs = await db.transaction(async (client) => {
+      const novaOs = await transacao(req, async (client) => {
         const relacionamento = await OsModel.validarRelacionamentos(
           {
             empresaId: usuario.empresa_id,
@@ -91,7 +89,7 @@ class OsController {
         return os;
       });
 
-      void PushService.enviar(
+      if (!req.operacaoRepetida) void PushService.enviar(
         novaOs.tecnico_id,
         'Nova ordem de serviço',
         `A O.S. #${novaOs.id} foi atribuída a você.`,
@@ -135,7 +133,7 @@ class OsController {
     const id = Number(req.params.id);
 
     try {
-      await db.transaction(async (client) => {
+      await transacao(req, async (client) => {
         const os = await OsModel.buscarPorId(id, req.usuarioLogado.empresa_id, client);
         if (!os) throw Object.assign(new Error('O.S. não encontrada.'), { status: 404 });
 
@@ -185,7 +183,7 @@ class OsController {
         );
       });
 
-      void PushService.enviar(
+      if (!req.operacaoRepetida) void PushService.enviar(
         req.body.tecnico_id,
         'Atendimento reagendado',
         `A O.S. #${id} foi incluída na sua agenda.`,
@@ -211,7 +209,7 @@ class OsController {
       return res.status(400).json({ erro: 'ID inválido.' });
 
     try {
-      const atualizada = await db.transaction(async (client) => {
+      const atualizada = await transacao(req, async (client) => {
         // Bug 9 — SELECT FOR UPDATE serializa transações simultâneas na mesma OS.
         // A segunda requisição PATCH /os/:id/status fica bloqueada até a primeira
         // commitar, garantindo que a checagem de estado seja atômica.
@@ -232,7 +230,8 @@ class OsController {
 
         if (novoStatus === 'FINALIZADA') {
           await _validarPreRequisitosFinalizacao(client, id, os, usuario);
-          await _baixarEstoque(client, id, os, usuario);
+          await require('../services/EstoqueService').baixar(client, id, os, usuario);
+          await client.query('INSERT INTO fila_documentos(os_id,empresa_id) VALUES($1,$2) ON CONFLICT(os_id) DO NOTHING', [id, usuario.empresa_id]);
         }
 
         const result = await client.query(
@@ -254,13 +253,7 @@ class OsController {
         return result.rows[0];
       });
 
-      // Bug 8 — PDF gerado em background: respondemos ao cliente imediatamente
-      // para evitar timeout no mobile. A URL do PDF só fica disponível após a
-      // geração assíncrona; o cliente deve buscar os detalhes da OS novamente
-      // para obtê-la (GET /os/:id retorna pdf_url quando pronto).
-      if (novoStatus === 'FINALIZADA') {
-        void _gerarEPersistirPdf(id, usuario, req);
-      }
+      // Documento processado pelo worker apos o commit.
 
       return res.json({
         mensagem: `O.S. atualizada para ${novoStatus}.`,
@@ -319,121 +312,5 @@ async function _validarPreRequisitosFinalizacao(client, id, os, usuario) {
     );
 }
 
-async function _baixarEstoque(client, id, os, usuario) {
-  const itensEstoque = await client.query(
-    `SELECT oi.id,oi.referencia_id,oi.quantidade,p.nome,p.estoque,
-            et.quantidade estoque_tecnico,et.tecnico_id
-       FROM os_itens oi
-       JOIN produtos p ON p.id=oi.referencia_id AND p.empresa_id=$2
-       LEFT JOIN estoque_tecnico et ON et.produto_id=p.id AND et.tecnico_id=$3
-      WHERE oi.os_id=$1 AND oi.tipo='PECA' AND oi.estoque_baixado=FALSE
-      FOR UPDATE OF p`,
-    [id, usuario.empresa_id, os.tecnico_id],
-  );
-
-  for (const item of itensEstoque.rows) {
-    const quantidade = Number(item.quantidade);
-    const disponivel = item.tecnico_id
-      ? Number(item.estoque_tecnico)
-      : Number(item.estoque);
-
-    if (disponivel < quantidade)
-      throw Object.assign(
-        new Error(`Estoque insuficiente para ${item.nome}. Disponível: ${disponivel}.`),
-        { status: 422 },
-      );
-
-    if (item.tecnico_id) {
-      await client.query(
-        'UPDATE estoque_tecnico SET quantidade=quantidade-$1,updated_at=NOW() WHERE tecnico_id=$2 AND produto_id=$3',
-        [quantidade, os.tecnico_id, item.referencia_id],
-      );
-    } else {
-      await client.query(
-        'UPDATE produtos SET estoque=estoque-$1,updated_at=NOW() WHERE id=$2 AND empresa_id=$3',
-        [quantidade, item.referencia_id, usuario.empresa_id],
-      );
-    }
-
-    await client.query(
-      `INSERT INTO estoque_movimentos
-         (empresa_id,produto_id,tipo,quantidade,observacao,os_id,usuario_id)
-       VALUES ($1,$2,'SAIDA',$3,$4,$5,$6)`,
-      [
-        usuario.empresa_id,
-        item.referencia_id,
-        quantidade,
-        `Baixa automática da O.S. #${id}`,
-        id,
-        usuario.usuario_id,
-      ],
-    );
-
-    await client.query(
-      'UPDATE os_itens SET estoque_baixado=TRUE WHERE id=$1',
-      [item.id],
-    );
-  }
-
-  await client.query(
-    `UPDATE estoque_reservas
-        SET status='CONSUMIDO', consumido_em=NOW(), updated_at=NOW()
-      WHERE os_id=$1 AND empresa_id=$2 AND status='ENTREGUE'`,
-    [id, usuario.empresa_id],
-  );
-}
-
-async function _gerarEPersistirPdf(id, usuario, req) {
-  try {
-    const dados = await OsModel.buscarDadosCompletosParaPdf(id, usuario.empresa_id);
-    const [fotos, checklist, medicoes, itens] = await Promise.all([
-      db.query(
-        `SELECT tipo,url,comentario,latitude,longitude,capturada_em,conteudo,mime_type
-           FROM os_fotos f
-           JOIN ordens_servico os ON os.id = f.os_id
-          WHERE f.os_id = $1 AND os.empresa_id = $2
-          ORDER BY f.created_at`,
-        [id, usuario.empresa_id],
-      ),
-      db.query(
-        'SELECT item,conforme,observacao FROM os_checklist_respostas WHERE os_id=$1 ORDER BY id',
-        [id],
-      ),
-      db.query('SELECT * FROM os_medicoes WHERE os_id=$1', [id]),
-      db.query(
-        'SELECT tipo,descricao,quantidade,valor_unitario FROM os_itens WHERE os_id=$1 ORDER BY id',
-        [id],
-      ),
-    ]);
-
-    dados.checklist = checklist.rows;
-    dados.medicoes = medicoes.rows[0] || {};
-    dados.itens = itens.rows;
-
-    const pdfConteudo = await PdfService.gerarOsPdf(dados, fotos.rows);
-    const pdfStorageKey = crypto.randomUUID();
-    const baseUrl =
-      process.env.APP_URL ||
-      (process.env.RENDER_EXTERNAL_HOSTNAME
-        ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
-        : `${req.protocol}://${req.get('host')}`);
-    const pdfUrl = `${baseUrl}/arquivos/ordens/${pdfStorageKey}.pdf`;
-
-    await db.query(
-      'UPDATE ordens_servico SET pdf_url=$1,pdf_storage_key=$2,pdf_conteudo=$3 WHERE id=$4 AND empresa_id=$5',
-      [pdfUrl, pdfStorageKey, pdfConteudo, id, usuario.empresa_id],
-    );
-
-    if (dados.telefone_whatsapp && WhatsAppService.configurado()) {
-      void WhatsAppService.enviarPdfOs(dados.telefone_whatsapp, dados.cliente_nome, pdfUrl);
-    }
-
-    return pdfUrl;
-  } catch (pdfError) {
-    // PDF é melhor-esforço: a O.S. já foi finalizada, apenas loga o erro
-    logger.aviso('os.pdf.falha', { os_id: id, erro_mensagem: pdfError.message });
-    return null;
-  }
-}
 
 module.exports = new OsController();

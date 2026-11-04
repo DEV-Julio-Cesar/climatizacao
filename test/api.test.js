@@ -1,3 +1,4 @@
+process.env.WHATSAPP_EMPRESA_ID = '3';
 process.env.JWT_SECRET = 'segredo-de-teste-com-tamanho-adequado';
 process.env.APP_URL = 'http://localhost:3000';
 process.env.WHATSAPP_VERIFY_TOKEN = 'token-webhook-teste';
@@ -18,9 +19,9 @@ async function request(server, pathname, options = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-const token = jwt.sign({ usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
-const tokenGestor = jwt.sign({ usuario_id: 2, empresa_id: 3, perfil: 'GESTOR' }, process.env.JWT_SECRET);
-const tokenRestrito = jwt.sign({ usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
+const token = jwt.sign({ token_use: 'access', sid: '00000000-0000-4000-8000-000000000001', usuario_id: 7, empresa_id: 3, perfil: 'TECNICO' }, process.env.JWT_SECRET);
+const tokenGestor = jwt.sign({ token_use: 'access', sid: '00000000-0000-4000-8000-000000000001', usuario_id: 2, empresa_id: 3, perfil: 'GESTOR' }, process.env.JWT_SECRET);
+const tokenRestrito = jwt.sign({ token_use: 'access', sid: '00000000-0000-4000-8000-000000000001', usuario_id: 8, empresa_id: 3, perfil: 'TECNICO', permissoes: [] }, process.env.JWT_SECRET);
 
 /**
  * Resposta padrão do authMiddleware.
@@ -40,6 +41,173 @@ test('health check responde sem autenticação', async () => {
   const result = await request(server, '/health');
   assert.equal(result.status, 200);
   assert.equal(result.body.status, 'ok');
+});
+
+test('recuperação responde sem revelar cadastro e limita a conta entre IPs',async()=>{
+  const service=require('../src/services/RecuperacaoSenhaService'),config=service.configurado,solicitar=service.solicitar;
+  service.configurado=()=>true;const recebidos=[];service.solicitar=async email=>{recebidos.push(email);};
+  try{
+    let texto;
+    for(let i=0;i<4;i++){
+      const resposta=await request(server,'/auth/senha/solicitar',{method:'POST',headers:{'Content-Type':'application/json','X-Forwarded-For':`198.51.102.${i+1}`},body:JSON.stringify({email:i%2?'RECUPERACAO@example.com':'recuperacao@example.com'})});
+      assert.equal(resposta.status,i<3?202:429);
+      if(i===0)texto=resposta.body;if(i<3)assert.deepEqual(resposta.body,texto);
+      assert.equal(resposta.body.token,undefined);
+    }
+    assert.deepEqual(recebidos,Array(3).fill('recuperacao@example.com'));
+  }finally{service.configurado=config;service.solicitar=solicitar;}
+});
+
+test('redefinição limita tentativas por token mesmo trocando de IP',async()=>{
+  for(let i=0;i<6;i++){
+    const resposta=await request(server,'/auth/senha/redefinir',{method:'POST',headers:{'Content-Type':'application/json','X-Forwarded-For':`198.51.103.${i+1}`},body:JSON.stringify({token:'a'.repeat(43),nova_senha:'curta'})});
+    assert.equal(resposta.status,i<5?400:429);
+  }
+});
+
+test('login não cria sessão quando a senha muda antes da emissão',async()=>{
+  const query=db.query,transaction=db.transaction;let criou=false;
+  const senha_hash=await require('bcryptjs').hash('SenhaAnterior123',4);
+  db.query=async sql=>sql.includes('FROM usuarios')?{rows:[{id:7,empresa_id:3,nome:'Pessoa',perfil:'TECNICO',senha_hash}]}:{rows:[]};
+  db.transaction=async fn=>fn({query:async sql=>{if(sql.includes('INSERT INTO sessoes'))criou=true;assert.ok(sql.includes('FOR UPDATE'));return {rows:[]};}});
+  try{const r=await request(server,'/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'corrida@example.com',senha:'SenhaAnterior123'})});assert.equal(r.status,401);assert.equal(criou,false);}
+  finally{db.query=query;db.transaction=transaction;}
+});
+
+test('troca autenticada bloqueia usuário e revoga sessões e links pendentes',async()=>{
+  const transaction=db.transaction;const bcrypt=require('bcryptjs'),Auth=require('../src/controllers/AuthController');
+  const anterior=await bcrypt.hash('SenhaAnterior123',4),consultas=[];let nova;
+  db.transaction=async fn=>fn({query:async(sql,args)=>{consultas.push(sql);if(sql.startsWith('SELECT senha_hash')){assert.ok(sql.includes('FOR UPDATE'));return {rows:[{senha_hash:anterior}]};}if(sql.startsWith('UPDATE usuarios'))nova=args[0];return {rows:[]};}});
+  const res={statusCode:200,status(n){this.statusCode=n;return this;},json(body){this.body=body;return this;}};
+  try{await Auth.alterarSenha({body:{senha_atual:'SenhaAnterior123',nova_senha:'SenhaNova123'},usuarioLogado:{usuario_id:7,empresa_id:3}},res);assert.equal(res.statusCode,200);assert.equal(await bcrypt.compare('SenhaNova123',nova),true);assert.ok(consultas.some(s=>s.startsWith('UPDATE sessoes')));assert.ok(consultas.some(s=>s.startsWith('UPDATE recuperacoes_senha')));}
+  finally{db.transaction=transaction;}
+});
+
+test('permissão removida no banco bloqueia token antigo de gestor imediatamente',async()=>{
+  const original=db.query;
+  db.query=async sql=>{assert.ok(sql.includes(AUTH_MIDDLEWARE_SQL));return {rows:[{...authOk.rows[0],perfil:'TECNICO',nome:'Técnico',overrides:[{permissao:'AGENDA_VISUALIZAR',permitido:false}]}]};};
+  try{assert.equal((await request(server,'/os/agenda',{headers:{Authorization:`Bearer ${tokenGestor}`}})).status,403);}
+  finally{db.query=original;}
+});
+
+test('listagem de ordens restringe técnico e mantém visão empresarial do gestor',async()=>{
+  const original=db.query,listar=OsModel.listarTodas;const argumentos=[];
+  db.query=async()=>authOk;OsModel.listarTodas=async(...args)=>{argumentos.push(args);return [];};
+  try{
+    assert.equal((await request(server,'/os/todas',{headers:{Authorization:`Bearer ${token}`}})).status,200);
+    assert.equal((await request(server,'/os/todas',{headers:{Authorization:`Bearer ${tokenGestor}`}})).status,200);
+    assert.deepEqual(argumentos,[[3,7],[3,null]]);
+  }finally{db.query=original;OsModel.listarTodas=listar;}
+});
+
+test('pagamento rejeita frações de centavo antes de alterar o banco',async()=>{
+  const original=db.query;db.query=async sql=>{assert.ok(sql.includes(AUTH_MIDDLEWARE_SQL));return authOk;};
+  try{assert.equal((await request(server,'/os/1/pagamentos',{method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:JSON.stringify({forma:'PIX',valor:1.001})})).status,400);}
+  finally{db.query=original;}
+});
+
+test('limite por conta bloqueia tentativas com IPs diferentes e e-mail normalizado',async()=>{
+  const original=db.query;db.query=async()=>({rows:[]});
+  try{
+    for(let i=0;i<11;i++){
+      const resposta=await request(server,'/login',{method:'POST',headers:{'Content-Type':'application/json','X-Forwarded-For':`198.51.100.${i+1}`},body:JSON.stringify({email:i%2?'ATAQUE@example.com':'ataque@example.com',senha:'errada123'})});
+      assert.equal(resposta.status,i<10?401:429);
+    }
+  }finally{db.query=original;}
+});
+
+test('recuperação de legado autoriza somente referências da empresa e exige gestão',async()=>{
+  const original=db.query;
+  db.query=async(sql,args)=>{
+    if(sql.includes(AUTH_MIDDLEWARE_SQL))return authOk;
+    assert.equal(args[1],3);
+    if(sql.includes('FROM ordens_servico'))return {rows:[{id:10}]};
+    if(sql.includes('FROM clientes'))return {rows:[{id:20}]};
+    throw new Error(sql);
+  };
+  const options=t=>({method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},body:JSON.stringify({itens:[{id:1,tipo:'FOTO_OS',os_id:10},{id:2,tipo:'FOTO_OS',os_id:999},{id:3,tipo:'CRIAR_OS',cliente_id:20}]})});
+  try{
+    assert.equal((await request(server,'/offline/verificar-legado',options(token))).status,403);
+    const r=await request(server,'/offline/verificar-legado',options(tokenGestor));assert.equal(r.status,200);assert.deepEqual(r.body.autorizados,[1,3]);
+  }finally{db.query=original;}
+});
+
+test('refresh token não acessa recursos e access token não renova sessão', async () => {
+  const refresh = jwt.sign({ token_use: 'refresh', sid: '00000000-0000-4000-8000-000000000001', usuario_id: 7, empresa_id: 3 }, process.env.JWT_SECRET);
+  assert.equal((await request(server, '/os/agenda', { headers: { Authorization: `Bearer ${refresh}` } })).status, 401);
+  assert.equal((await request(server, '/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: token }) })).status, 401);
+});
+
+test('arquivo exige link assinado e rejeita expiração e troca de caminho', async () => {
+  const caminho = '/arquivos/fotos/evidencia';
+  assert.equal((await request(server, caminho)).status, 401);
+  const { assinarUrl } = require('../src/services/ArquivoService');
+  assert.equal((await request(server, assinarUrl(caminho, 3, '-1s'))).status, 401);
+  assert.equal((await request(server, assinarUrl(caminho, 3).replace('/fotos/evidencia', '/fotos/outra'))).status, 401);
+});
+
+test('técnico não contorna permissão de reagendamento pela rota agendar', async () => {
+  const original = db.query;
+  db.query = async sql => { assert.ok(sql.includes(AUTH_MIDDLEWARE_SQL)); return authOk; };
+  try {
+    assert.equal((await request(server, '/os/1/agendar', { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ agendado_para: '2026-11-01T12:00:00Z' }) })).status, 403);
+  } finally { db.query = original; }
+});
+
+test('exportação de técnico não consulta cadastro empresarial de clientes', async () => {
+  const original = db.query;
+  db.query = async sql => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
+    assert.ok(!sql.includes('FROM clientes'), 'não deve exportar clientes da empresa');
+    return { rows: [] };
+  };
+  try {
+    const resposta = await request(server, '/conta/dados', { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body.clientes_empresa, []);
+  } finally { db.query = original; }
+});
+
+test('sessão web usa cookie, rotaciona refresh e revoga acesso no logout', async () => {
+  const original = db.query;
+  const originalTransaction=db.transaction;
+  db.transaction=async fn=>fn({query:(...args)=>db.query(...args)});
+  const bcrypt = require('bcryptjs');
+  const senha_hash = await bcrypt.hash('senha123', 4);
+  let sessao;
+  const usuario = { id: 7, empresa_id: 3, nome: 'Técnico', perfil: 'TECNICO', ativo: true, senha_hash };
+  db.query = async (sql, args) => {
+    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return sessao?.revogada ? { rows: [] } : authOk;
+    if (sql.includes('FROM usuarios')) return { rows: [usuario] };
+    if (sql.includes('FROM usuario_permissoes')) return { rows: [] };
+    if (sql.includes('INSERT INTO sessoes')) { sessao = { id: args[0], hash: args[3] }; return { rows: [] }; }
+    if (sql.includes('UPDATE sessoes SET refresh_hash')) {
+      if (sessao.revogada || sessao.hash !== args[4]) return { rows: [] };
+      sessao.hash = args[0]; return { rows: [{ id: sessao.id }] };
+    }
+    if (sql.includes('UPDATE sessoes SET revogada_em')) { sessao.revogada = true; return { rows: [] }; }
+    throw new Error(`SQL inesperado: ${sql}`);
+  };
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tecnico@example.com', senha: 'senha123', cliente: 'web' }) });
+    assert.equal(login.status, 200);
+    const dados = await login.json();
+    assert.equal(dados.refresh_token, undefined);
+    assert.match(login.headers.get('set-cookie'), /HttpOnly/);
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const renovar = () => fetch(`${base}/auth/refresh`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ cliente: 'web' }) });
+    const renovada = await renovar();
+    assert.equal(renovada.status, 200);
+    const novoCookie = renovada.headers.get('set-cookie').split(';')[0];
+    assert.notEqual(novoCookie, cookie);
+    const somenteCookie=await fetch(`${base}/auth/refresh`,{method:'POST',headers:{Cookie:novoCookie,'Content-Type':'application/json'},body:'{}'});
+    assert.equal(somenteCookie.status,200);
+    assert.equal((await somenteCookie.json()).refresh_token,undefined,'cookie não deve permitir extrair refresh por JSON');
+    assert.equal((await renovar()).status, 401, 'refresh consumido não pode ser reutilizado');
+    assert.equal((await fetch(`${base}/auth/refresh/logout`, { method: 'POST', headers: { Cookie: novoCookie } })).status, 200);
+    assert.equal((await request(server, '/os/agenda', { headers: { Authorization: `Bearer ${dados.token}` } })).status, 401);
+  } finally { db.query = original; db.transaction=originalTransaction; }
 });
 
 test('rota protegida recusa chamada sem token', async () => {
@@ -85,6 +253,7 @@ test('criação usa empresa e técnico do token', async () => {
         assert.equal(params[3], 7);
         return { rows: [{ id: 10, status: 'ABERTA', empresa_id: 3, tecnico_id: 7 }] };
       }
+      if (sql.includes('INSERT INTO fila_documentos')) return { rows: [] };
       if (sql.includes('INSERT INTO os_historico')) return { rows: [] };
       throw new Error(`SQL não esperado: ${sql}`);
     },
@@ -211,7 +380,7 @@ test('arquivo de evidência persistido pode ser recuperado após deploy', async 
   };
   try {
     const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/fotos/123e4567-e89b-12d3-a456-426614174000`);
+    const response = await fetch(require('../src/services/ArquivoService').assinarUrl(`http://127.0.0.1:${address.port}/arquivos/fotos/123e4567-e89b-12d3-a456-426614174000`, 3));
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'image/jpeg');
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'imagem-teste');
@@ -227,7 +396,7 @@ test('PDF persistido da ordem pode ser recuperado após deploy', async () => {
   };
   try {
     const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf`);
+    const response = await fetch(require('../src/services/ArquivoService').assinarUrl(`http://127.0.0.1:${address.port}/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf`, 3));
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'application/pdf');
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF-teste');
@@ -245,6 +414,7 @@ test('agenda impede conflito de horário para o mesmo técnico', async () => {
     query: async (sql, params) => {
       if (sql.includes('FROM clientes')) return { rows: [{ id: params[0] }] };
       if (sql.includes('FROM usuarios')) return { rows: [{ id: params[0] }] };
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
       if (sql.includes('tstzrange')) return { rows: [{ id: 99 }] };
       throw new Error(`SQL não esperado: ${sql}`);
     },
@@ -580,7 +750,7 @@ test('Bug 8 — finalização retorna imediatamente sem aguardar PDF', async () 
   db.transaction = async (callback) => callback({
     query: async (sql) => {
       // SELECT FOR UPDATE da OS (Bug 9)
-      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 5, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, diagnostico: 'ok', solucao_aplicada: 'ok', checkout_em: new Date() }] };
+      if (sql.includes('FOR UPDATE') && sql.includes('FROM ordens_servico')) return { rows: [{ id: 5, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, diagnostico: 'ok', solucao_aplicada: 'ok', checkout_em: new Date() }] };
       if (sql.includes("tipo='ASSINATURA'")) return { rows: [{ id: 1 }] };
       if (sql.includes("tipo IN ('ANTES','DEPOIS','EVIDENCIA')")) return { rows: [{ total: 2 }] };
       if (sql.includes('os_checklist_respostas')) return { rows: [{ id: 1 }] };
@@ -592,6 +762,7 @@ test('Bug 8 — finalização retorna imediatamente sem aguardar PDF', async () 
       if (sql.includes('UPDATE os_itens SET estoque_baixado')) return { rows: [] };
       if (sql.includes('estoque_reservas')) return { rows: [] };
       if (sql.includes('UPDATE ordens_servico')) return { rows: [{ id: 5, status: 'FINALIZADA', empresa_id: 3, tecnico_id: 7, pdf_url: null }] };
+      if (sql.includes('INSERT INTO fila_documentos')) return { rows: [] };
       if (sql.includes('INSERT INTO os_historico')) return { rows: [] };
       throw new Error(`SQL transação não esperado: ${sql}`);
     },
@@ -623,7 +794,7 @@ test('Bug 9 — segunda finalização simultânea é rejeitada com 409', async (
   db.transaction = async (callback) => callback({
     query: async (sql) => {
       // OS já está FINALIZADA quando o lock é adquirido
-      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 6, status: 'FINALIZADA', empresa_id: 3, tecnico_id: 7 }] };
+      if (sql.includes('FOR UPDATE') && sql.includes('FROM ordens_servico')) return { rows: [{ id: 6, status: 'FINALIZADA', empresa_id: 3, tecnico_id: 7 }] };
       throw new Error(`SQL transação não esperado: ${sql}`);
     },
   });
@@ -650,7 +821,7 @@ test('Bug 10 — segundo PAUSAR simultâneo é rejeitado com 409', async () => {
   db.transaction = async (callback) => callback({
     query: async (sql) => {
       // OS está EM_ANDAMENTO mas já pausada
-      if (sql.includes('FOR UPDATE')) return { rows: [{ id: 7, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, pausado_em: new Date() }] };
+      if (sql.includes('FOR UPDATE') && sql.includes('FROM ordens_servico')) return { rows: [{ id: 7, status: 'EM_ANDAMENTO', empresa_id: 3, tecnico_id: 7, pausado_em: new Date() }] };
       throw new Error(`SQL transação não esperado: ${sql}`);
     },
   });

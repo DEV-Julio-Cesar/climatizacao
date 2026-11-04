@@ -3,11 +3,13 @@ const path = require('path');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
 const { rateLimit } = require('express-rate-limit');
 const db = require('./config/database');
 const logger = require('./config/logger');
 const requestLogger = require('./middlewares/requestLogger');
 const AuthController = require('./controllers/AuthController');
+const RecuperacaoSenhaController = require('./controllers/RecuperacaoSenhaController');
 const LgpdController = require('./controllers/LgpdController');
 const osRoutes = require('./routes/os.routes');
 const cadastroRoutes = require('./routes/cadastro.routes');
@@ -16,6 +18,7 @@ const gestaoRoutes = require('./routes/gestao.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const suprimentosRoutes = require('./routes/suprimentos.routes');
 const authMiddleware = require('./middlewares/authMiddleware');
+const { autorizarArquivo, assinarResposta } = require('./services/ArquivoService');
 
 function createApp() {
   const app = express();
@@ -40,6 +43,7 @@ function createApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
   app.use(compression());
+  app.use(cookieParser());
   app.use(requestLogger);
   app.use((req, res, next) => {
     const origin = req.get('origin');
@@ -47,41 +51,46 @@ function createApp() {
     const sameOrigin = !origin || origin === `${req.protocol}://${req.get('host')}`;
     if (origin && !sameOrigin && !allowedOrigins.includes(origin)) return res.status(403).json({ erro: 'Origem não autorizada.' });
     if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     return next();
   });
   app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-  app.use('/uploads', express.static(path.resolve(__dirname, '..', 'tmp', 'uploads')));
-  app.get('/arquivos/fotos/:chave', async (req, res) => {
+  app.use((req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = corpo => json(req.usuarioLogado ? assinarResposta(corpo, req.usuarioLogado.empresa_id) : corpo);
+    next();
+  });
+  app.get('/arquivos/fotos/:chave', autorizarArquivo, async (req, res) => {
     try {
       const resultado = await db.query(
-        'SELECT conteudo,mime_type FROM os_fotos WHERE storage_key=$1 AND conteudo IS NOT NULL',
-        [req.params.chave],
+        'SELECT f.conteudo,f.mime_type FROM os_fotos f JOIN ordens_servico os ON os.id=f.os_id WHERE f.storage_key=$1 AND f.conteudo IS NOT NULL AND os.empresa_id=$2 AND os.deleted_at IS NULL',
+        [req.params.chave, req.empresaArquivo],
       );
       const arquivo = resultado.rows[0];
       if (!arquivo) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
       res.setHeader('Content-Type', arquivo.mime_type || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(arquivo.conteudo);
     } catch (_error) {
       return res.status(404).json({ erro: 'Arquivo não encontrado.' });
     }
   });
-  app.get('/arquivos/ordens/:chave.pdf', async (req, res) => {
+  app.get('/arquivos/ordens/:chave.pdf', autorizarArquivo, async (req, res) => {
     try {
       const resultado = await db.query(
-        'SELECT id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND pdf_conteudo IS NOT NULL AND deleted_at IS NULL',
-        [req.params.chave],
+        'SELECT id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND pdf_conteudo IS NOT NULL AND deleted_at IS NULL AND empresa_id=$2',
+        [req.params.chave, req.empresaArquivo],
       );
       const arquivo = resultado.rows[0];
       if (!arquivo) return res.status(404).json({ erro: 'Relatório não encontrado.' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="ordem_servico_${arquivo.id}.pdf"`);
-      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(arquivo.pdf_conteudo);
     } catch (_error) {
@@ -108,12 +117,31 @@ function createApp() {
   });
   const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de acesso. Aguarde 15 minutos e tente novamente.' } });
-  app.post('/login', loginLimiter, AuthController.login);
+  const contaLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, skipSuccessfulRequests: true,
+    keyGenerator: req => crypto.createHash('sha256').update((typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'')).digest('hex'),
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { erro: 'Muitas tentativas para esta conta. Aguarde 15 minutos.' } });
+  app.post('/login', loginLimiter, contaLimiter, AuthController.login);
+  const recuperarIp = rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas solicitações. Aguarde 15 minutos.'}});
+  const recuperarConta = rateLimit({windowMs:15*60*1000,limit:3,keyGenerator:req=>crypto.createHash('sha256').update((typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'')).digest('hex'),standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas solicitações para este e-mail. Aguarde 15 minutos.'}});
+  const redefinirIp = rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas tentativas. Aguarde 15 minutos.'}});
+  const redefinirToken = rateLimit({windowMs:15*60*1000,limit:5,keyGenerator:req=>crypto.createHash('sha256').update((typeof req.body?.token==='string'?req.body.token:'')).digest('hex'),standardHeaders:'draft-8',legacyHeaders:false,message:{erro:'Muitas tentativas para este link. Aguarde ou solicite outro.'}});
+  app.post('/auth/senha/solicitar',recuperarIp,recuperarConta,RecuperacaoSenhaController.solicitar);
+  app.post('/auth/senha/redefinir',redefinirIp,redefinirToken,RecuperacaoSenhaController.redefinir);
+  // Logout: limpa o cookie HttpOnly do refresh token
+  app.post('/auth/refresh/logout', AuthController.logout);
+  app.post('/logout', AuthController.logout);
   // Refresh: limite mais generoso, mas ainda protegido contra abuso
   const refreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de renovação de sessão. Aguarde e tente novamente.' } });
   app.post('/auth/refresh', refreshLimiter, AuthController.refresh);
   app.post('/conta/senha', authMiddleware, AuthController.alterarSenha);
+  app.get('/conta/sessao', authMiddleware, (req, res) => {
+    const u = req.usuarioLogado;
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ usuario: { id: u.usuario_id, empresa_id: u.empresa_id, nome: u.nome, perfil: u.perfil, permissoes: u.permissoes } });
+  });
+  app.get('/eventos',authMiddleware,require('./services/EventoService').stream);
   // Direitos LGPD: portabilidade (GET) e exclusão (DELETE)
   app.get('/conta/dados',    authMiddleware, LgpdController.exportarDados);
   app.delete('/conta/dados', authMiddleware, LgpdController.excluirDados);
@@ -128,7 +156,7 @@ function createApp() {
     logger.erro('erro_nao_tratado', {
       request_id: _req.id,
       metodo: _req.method,
-      rota: _req.originalUrl,
+      rota: _req.path,
       erro_mensagem: error.message,
       erro_stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
     });

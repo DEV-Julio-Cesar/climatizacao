@@ -10,7 +10,7 @@ import { api } from '../../services/api';
 import { useTheme } from '../../styles/useTheme';
 import { registrarDispositivoPush } from '../../services/notifications';
 
-export default function LoginScreen({ onLogin }) {
+export default function LoginScreen({ onLogin, navigation }) {
   const { colors, shadow } = useTheme();
 
   const [email, setEmail] = useState('');
@@ -142,6 +142,7 @@ export default function LoginScreen({ onLogin }) {
                 </>
               )}
           </TouchableOpacity>
+          <TouchableOpacity disabled={loading} onPress={()=>navigation.navigate('EsqueciSenha',{email})} style={{padding:14,alignItems:'center'}}><Text style={{color:colors.primary,fontWeight:'700'}}>Esqueci minha senha</Text></TouchableOpacity>
         </View>
 
         <Text style={styles.footer}>Gestão de serviços de climatização</Text>

@@ -38,7 +38,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
   -- Preenchido sempre que o usuário troca a senha.
   -- O authMiddleware rejeita tokens emitidos (iat) antes deste instante.
   senha_alterada_em TIMESTAMPTZ
-); (clientes de cada empresa — Multi-Tenant)
+);
+
+-- Atualização idempotente para bancos de instalações anteriores.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_alterada_em TIMESTAMPTZ;
+
+-- 3. CLIENTES (clientes de cada empresa — Multi-Tenant)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS clientes (
   id          SERIAL PRIMARY KEY,

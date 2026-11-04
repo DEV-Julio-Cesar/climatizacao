@@ -78,26 +78,18 @@ class GestaoController {
       }); return res.status(201).json(ct);
     } catch(e){return res.status(e.status||500).json({erro:e.status?e.message:'Falha ao criar contrato.'});}
   }
-  async gerarVisita(req,res){
-    try{const os=await db.transaction(async c=>{const ct=await c.query("SELECT * FROM contratos WHERE id=$1 AND empresa_id=$2 AND status='ATIVO' FOR UPDATE",[req.params.id,req.usuarioLogado.empresa_id]);if(!ct.rows[0])throw Object.assign(new Error('Contrato ativo não encontrado.'),{status:404});const ap=await c.query('SELECT aparelho_id FROM contrato_aparelhos WHERE contrato_id=$1 ORDER BY aparelho_id LIMIT 1',[req.params.id]);const r=await c.query(`INSERT INTO ordens_servico(empresa_id,cliente_id,aparelho_id,tecnico_id,tipo_servico,descricao_problema,agendado_para)
-      VALUES($1,$2,$3,$4,'PREVENTIVA',$5,$6::date + time '09:00') RETURNING *`,[req.usuarioLogado.empresa_id,ct.rows[0].cliente_id,ap.rows[0]?.aparelho_id||null,req.usuarioLogado.usuario_id,`Manutenção preventiva - ${ct.rows[0].nome}`,ct.rows[0].proxima_visita]);await c.query("UPDATE contratos SET proxima_visita=(proxima_visita + (periodicidade_meses || ' months')::interval)::date,updated_at=NOW() WHERE id=$1",[req.params.id]);await c.query("INSERT INTO os_historico(os_id,status_anterior,status_novo,modificado_por,observacao)VALUES($1,NULL,'ABERTA',$2,$3)",[r.rows[0].id,req.usuarioLogado.usuario_id,`Gerada pelo contrato #${req.params.id}`]);return r.rows[0]});return res.status(201).json(os)}catch(e){return res.status(e.status||500).json({erro:e.message||'Falha ao gerar visita.'})}
+  async gerarVisita(req,res) {
+    const validacao=z.object({tecnico_id:z.coerce.number().int().positive(),agendado_para:z.string().datetime({offset:true}),duracao_prevista_minutos:z.coerce.number().int().min(15).max(480).default(120),competencia:z.string().date()}).strict().safeParse(req.body);
+    const id=Number(req.params.id);
+    if(!validacao.success||!Number.isInteger(id)||id<=0)return res.status(400).json({erro:'Informe tecnico, horario, duracao e competencia validos.'});
+    try{return res.status(201).json(await require('../services/ContratoService').gerarVisitas(id,req.usuarioLogado,validacao.data))}
+    catch(e){return res.status(e.status||500).json({erro:e.status?e.message:'Falha ao gerar visita.'})}
   }
-  async notificacoes(req,res){
-    try{const e=req.usuarioLogado.empresa_id,u=req.usuarioLogado.usuario_id;await db.query(`INSERT INTO notificacoes(empresa_id,usuario_id,tipo,titulo,mensagem,referencia_tipo,referencia_id)
-      SELECT $1,$2,'MANUTENCAO','Manutenção programada',c.nome||' vence em '||to_char(c.proxima_visita,'DD/MM/YYYY'),'CONTRATO',c.id FROM contratos c
-      WHERE c.empresa_id=$1 AND c.status='ATIVO' AND c.proxima_visita BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '15 days'
-      AND NOT EXISTS(SELECT 1 FROM notificacoes n WHERE n.usuario_id=$2 AND n.referencia_tipo='CONTRATO' AND n.referencia_id=c.id AND n.created_at::date=CURRENT_DATE)`,[e,u]);const r=await db.query('SELECT * FROM notificacoes WHERE empresa_id=$1 AND (usuario_id=$2 OR usuario_id IS NULL) ORDER BY lida,created_at DESC LIMIT 100',[e,u]);return res.json(r.rows)}catch(e){return res.status(500).json({erro:'Falha ao carregar notificações.'})}
+  async notificacoes(req,res) {
+    try{const r=await db.query('SELECT * FROM notificacoes WHERE empresa_id=$1 AND (usuario_id=$2 OR usuario_id IS NULL) ORDER BY lida,created_at DESC LIMIT 100',[req.usuarioLogado.empresa_id,req.usuarioLogado.usuario_id]);return res.json(r.rows)}
+    catch(e){return res.status(500).json({erro:'Falha ao carregar notificacoes.'})}
   }
   async lerNotificacao(req,res){try{await db.query('UPDATE notificacoes SET lida=TRUE WHERE id=$1 AND empresa_id=$2 AND (usuario_id=$3 OR usuario_id IS NULL)',[req.params.id,req.usuarioLogado.empresa_id,req.usuarioLogado.usuario_id]);return res.sendStatus(204)}catch(e){return res.status(500).json({erro:'Falha ao atualizar notificação.'})}}
-  async relatorio(req,res){
-    try{const e=req.usuarioLogado.empresa_id;const [os,receita,servicos,tecnicos,contratos]=await Promise.all([
-      db.query(`SELECT COUNT(*)::int total,COUNT(*)FILTER(WHERE status='FINALIZADA')::int finalizadas,COUNT(*)FILTER(WHERE status='CANCELADA')::int canceladas,COUNT(*)FILTER(WHERE status='EM_ANDAMENTO')::int em_andamento,COUNT(*)FILTER(WHERE status='ABERTA' AND agendado_para<NOW())::int atrasadas,COUNT(*)FILTER(WHERE pausado_em IS NOT NULL)::int pausadas,COUNT(*)FILTER(WHERE retorno_necessario)::int retornos,ROUND(AVG((EXTRACT(EPOCH FROM(finalizado_em-iniciado_em))-total_pausa_segundos)/3600)FILTER(WHERE finalizado_em IS NOT NULL)::numeric,1) tempo_medio_horas,ROUND(100.0*COUNT(*)FILTER(WHERE status='FINALIZADA' AND retorno_necessario=FALSE)/NULLIF(COUNT(*)FILTER(WHERE status='FINALIZADA'),0),1) primeira_resolucao_pct FROM ordens_servico WHERE empresa_id=$1 AND created_at>=NOW()-INTERVAL '90 days'`,[e]),
-      db.query(`SELECT COALESCE(SUM(valor_total)FILTER(WHERE status='FINALIZADA'),0) faturado,COALESCE((SELECT SUM(valor)FROM pagamentos WHERE empresa_id=$1 AND pago_em>=NOW()-INTERVAL '90 days'),0) recebido FROM ordens_servico WHERE empresa_id=$1 AND created_at>=NOW()-INTERVAL '90 days'`,[e]),
-      db.query(`SELECT tipo_servico,COUNT(*)::int total,COALESCE(SUM(valor_total),0) valor FROM ordens_servico WHERE empresa_id=$1 AND created_at>=NOW()-INTERVAL '90 days' GROUP BY tipo_servico ORDER BY total DESC`,[e]),
-      db.query(`SELECT u.nome,COUNT(os.id)::int atendimentos,COUNT(os.id)FILTER(WHERE os.status='FINALIZADA')::int finalizadas FROM usuarios u LEFT JOIN ordens_servico os ON os.tecnico_id=u.id AND os.created_at>=NOW()-INTERVAL '90 days' WHERE u.empresa_id=$1 AND u.ativo=TRUE GROUP BY u.id ORDER BY finalizadas DESC`,[e]),
-      db.query("SELECT COUNT(*)FILTER(WHERE status='ATIVO')::int ativos,COALESCE(SUM(valor_mensal)FILTER(WHERE status='ATIVO'),0) receita_recorrente FROM contratos WHERE empresa_id=$1",[e])]);return res.json({periodo_dias:90,...os.rows[0],...receita.rows[0],contratos:contratos.rows[0],servicos:servicos.rows,tecnicos:tecnicos.rows})
-    }catch(e){return res.status(500).json({erro:'Falha ao gerar relatório.'})}
-  }
   async agenda(req,res){try{const params=[req.usuarioLogado.empresa_id],where=['os.empresa_id=$1','os.deleted_at IS NULL'];if(req.query.data){params.push(req.query.data);where.push(`os.agendado_para::date=$${params.length}::date`)}if(req.query.tecnico_id){params.push(req.query.tecnico_id);where.push(`os.tecnico_id=$${params.length}`)}const r=await db.query(`SELECT os.id,os.status,os.tipo_servico,os.agendado_para,c.nome cliente_nome,u.nome tecnico_nome,c.endereco,c.latitude,c.longitude FROM ordens_servico os JOIN clientes c ON c.id=os.cliente_id JOIN usuarios u ON u.id=os.tecnico_id WHERE ${where.join(' AND ')} ORDER BY os.agendado_para NULLS LAST`,params);return res.json(r.rows)}catch(e){return res.status(500).json({erro:'Falha ao carregar agenda.'})}}
 }
 module.exports=new GestaoController();

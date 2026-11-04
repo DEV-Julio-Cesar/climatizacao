@@ -25,7 +25,16 @@ export function AppProvider({ children }) {
   // Carrega preferências persistidas
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
-      .then((value) => value && setPreferencias((current) => ({ ...current, ...JSON.parse(value) })))
+      .then((value) => {
+        if(!value)return;
+        const salvas=JSON.parse(value);
+        setPreferencias({
+          notificacoes:typeof salvas?.notificacoes==='boolean'?salvas.notificacoes:PADROES.notificacoes,
+          vibracao:typeof salvas?.vibracao==='boolean'?salvas.vibracao:PADROES.vibracao,
+          tema:['sistema','claro','escuro'].includes(salvas?.tema)?salvas.tema:PADROES.tema,
+        });
+      })
+      .catch(() => {})
       .finally(() => setCarregandoPreferencias(false));
   }, []);
 
