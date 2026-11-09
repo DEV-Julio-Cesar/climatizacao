@@ -29,7 +29,7 @@ class CadastroController {
       if (querPaginacao && cursor) { params.push(cursor); cursorSql = ` AND c.id < $${params.length}`; }
       if (querPaginacao) params.push(limit + 1);
       const result = await db.query(
-        `SELECT c.id, c.nome, c.telefone, c.cpf_cnpj, c.endereco, c.numero, c.complemento, c.bairro,
+        `SELECT c.id, c.nome, c.telefone, NULL::text AS cpf_cnpj, c.endereco, c.numero, c.complemento, c.bairro,
                 c.cep, c.cidade, c.estado, c.latitude, c.longitude,
                 COALESCE(json_agg(json_build_object('id', a.id, 'marca', a.marca, 'modelo', a.modelo, 'capacidade', a.capacidade,
                   'numero_serie',a.numero_serie,'patrimonio',a.patrimonio,'tipo_gas',a.tipo_gas,'ambiente',a.ambiente,
@@ -102,9 +102,10 @@ class CadastroController {
   async atualizarCliente(req, res) {
     try {
       const d = req.body;
+      if(d.remover_documento && req.usuarioLogado.perfil!=='ADMIN')return res.status(403).json({erro:'Somente o administrador pode remover o documento.'});
       const documento = DocumentoService.proteger(d.cpf_cnpj, req.usuarioLogado.empresa_id);
       const r = await db.query(
-        `UPDATE clientes SET nome=$1,telefone=$2,cpf_cnpj=NULL,documento_cifrado=$3,documento_hash=$4,tipo_pessoa=$5,endereco=$6,numero=$7,complemento=$8,bairro=$9,cep=$10,cidade=$11,estado=$12,latitude=$13,longitude=$14,updated_at=NOW()
+        `UPDATE clientes SET nome=$1,telefone=$2,cpf_cnpj=CASE WHEN $3::text IS NOT NULL OR $17 THEN NULL ELSE cpf_cnpj END,documento_cifrado=CASE WHEN $17 THEN NULL ELSE COALESCE($3,documento_cifrado) END,documento_hash=CASE WHEN $17 THEN NULL ELSE COALESCE($4,documento_hash) END,tipo_pessoa=CASE WHEN $17 THEN NULL ELSE COALESCE($5,tipo_pessoa) END,endereco=$6,numero=$7,complemento=$8,bairro=$9,cep=$10,cidade=$11,estado=$12,latitude=$13,longitude=$14,updated_at=NOW()
          WHERE id=$15 AND empresa_id=$16 AND deleted_at IS NULL RETURNING *`,
         [
           d.nome,
@@ -123,6 +124,7 @@ class CadastroController {
           d.longitude ?? null,
           req.params.id,
           req.usuarioLogado.empresa_id,
+          d.remover_documento === true,
         ],
       );
       if (!r.rows[0])
@@ -288,7 +290,7 @@ class CadastroController {
         [req.params.id, req.usuarioLogado.empresa_id],
       );
       return res.json({
-        ...cliente.rows[0],
+        ...exporDocumento(cliente.rows[0]),
         aparelhos: equipamentos.rows,
       });
     } catch (e) {
@@ -375,6 +377,7 @@ function normalizarTelefone(valor) {
 function exporDocumento(cliente) {
   if (!cliente) return cliente;
   const documento = DocumentoService.decifrar(cliente.documento_cifrado) || cliente.cpf_cnpj || null;
-  const { documento_cifrado, documento_hash, ...seguro } = cliente;
+  const campos=['id','nome','telefone','email','endereco','numero','complemento','bairro','cep','cidade','estado','latitude','longitude','tipo_pessoa','created_at','updated_at','aparelhos'];
+  const seguro=Object.fromEntries(campos.filter(k=>Object.hasOwn(cliente,k)).map(k=>[k,cliente[k]]));
   return { ...seguro, cpf_cnpj: documento };
 }

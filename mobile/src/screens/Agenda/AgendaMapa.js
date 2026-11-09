@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../services/api';
 import { tentarSincronizarOffline } from '../../services/SyncService';
 import { sincronizarLembretes, cancelarTodosLembretes } from '../../services/agendaLembretes';
-import { lerCache, salvarCache } from '../../database/sqlite';
+import { obterEscopoOffline, verificarEscopoOffline, lerCache, salvarCache } from '../../database/sqlite';
 import { colors, shadow } from '../../styles/theme';
 import { useApp } from '../../context/AppContext';
 
@@ -21,20 +21,23 @@ export default function Agenda({ navigation, onLogout }) {
   const [filtro, setFiltro] = useState('HOJE'); const [busca, setBusca] = useState('');
   const carregar = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
+    const scope=await obterEscopoOffline();
     try {
       await tentarSincronizarOffline();
       const dados = await api.chamadaAutenticada(`/os/agenda?filtro=${filtro}&busca=${encodeURIComponent(busca.trim())}`);
+      await verificarEscopoOffline(scope);
       setOrdens(dados);
-      await salvarCache(`agenda_${filtro}_${busca.trim()}`, dados);
+      await salvarCache(`agenda_${filtro}_${busca.trim()}`, dados, scope);
       // Agenda lembretes locais de forma assíncrona — não bloqueia a UI
       void sincronizarLembretes(dados, preferencias.notificacoes);
     }
-    catch (error) { const cache=await lerCache(`agenda_${filtro}_${busca.trim()}`); if(cache) setOrdens(cache.dados); else Alert.alert('Não foi possível carregar', error.message); }
+    catch (error) { if(error.status===401||error.status===503)return; const cache=await lerCache(`agenda_${filtro}_${busca.trim()}`,scope); if(cache) setOrdens(cache.dados); else Alert.alert('Não foi possível carregar', error.message); }
     finally { setLoading(false); setRefreshing(false); }
   }, [filtro, busca, preferencias.notificacoes]);
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
   useEffect(() => {
     const handleLogout = async () => {
+      try { await api.logout(); } catch(e) { return Alert.alert('Não foi poss?vel encerrar a sessão',e.message); }
       // Cancela lembretes locais antes de limpar a sessão
       await cancelarTodosLembretes().catch(() => {});
       // Limpa todos os dados de sessão antes de chamar onLogout

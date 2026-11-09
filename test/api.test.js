@@ -266,7 +266,7 @@ test('repetição de FINALIZADA não baixa estoque nem gera PDF novamente', asyn
     consultasNaTransacao += 1;
     if (sql.startsWith('SELECT * FROM ordens_servico')) return { rows: [{
       id: 10, empresa_id: 3, tecnico_id: 7, status: 'FINALIZADA',
-      checkout_em: new Date(), pdf_url: 'https://example.test/os-10.pdf',
+      checkout_em: new Date(), pdf_url: 'https://example.test/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf',
     }] };
     throw new Error(`SQL não esperado: ${sql}`);
   } });
@@ -276,7 +276,7 @@ test('repetição de FINALIZADA não baixa estoque nem gera PDF novamente', asyn
       body: JSON.stringify({ novo_status:'FINALIZADA' }),
     });
     assert.equal(result.status, 200);
-    assert.equal(result.body.pdf_url, 'https://example.test/os-10.pdf');
+    assert.match(result.body.pdf_url,/\/arquivos\/ordens\/.+\?exp=\d+&sig=/);
     assert.equal(consultasNaTransacao, 1);
   } finally { db.query = originalQuery; db.transaction = originalTransaction; }
 });
@@ -366,7 +366,7 @@ test('PDF persistido da ordem pode ser recuperado após deploy', async () => {
   };
   try {
     const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf`);
+    const response = await fetch(require('../src/services/ArquivoUrlService').assinarPdf(`http://127.0.0.1:${address.port}/arquivos/ordens/123e4567-e89b-12d3-a456-426614174001.pdf`));
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'application/pdf');
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF-teste');

@@ -47,7 +47,7 @@ O ClimaSaaS é uma plataforma SaaS multi-tenant para empresas de climatização.
   - `routes/` — proteção de rotas por perfil/permissão
 
 ### Infraestrutura
-- **Deploy**: Render (produção) + Docker + pipeline AWS EC2/ECS
+- **Deploy**: AWS EC2/ECS + Docker
 - **CI/CD**: GitHub Actions (`ci.yml`) — instala, testa, audita dependências e compila as três camadas
 - **Armazenamento de arquivos**: PostgreSQL BYTEA (fotos e PDFs embutidos no banco, sem S3)
 - **Autenticação**: JWT HS256 (access 8h + refresh 30d) com invalidação por `senha_alterada_em`

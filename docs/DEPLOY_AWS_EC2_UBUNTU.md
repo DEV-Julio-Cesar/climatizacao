@@ -1,6 +1,6 @@
 # Deploy AWS EC2 Ubuntu
 
-Configuração atual de produção para a instância `13.58.212.142`:
+Configuracao prevista pelo roteiro para a instancia `13.58.212.142` (o banco efetivo precisa ser confirmado no ambiente do servico):
 
 - painel e API na mesma origem HTTPS: `13-58-212-142.nip.io`;
 - Nginx nas portas 80/443;
@@ -40,3 +40,16 @@ curl https://13-58-212-142.nip.io/health/ready
 ```
 
 O segredo do usuário PostgreSQL fica em `/root/.climasaas-db-password`. O `.env` e esse arquivo devem entrar no backup seguro, mas nunca no Git.
+
+## Identificar o banco sem exibir credenciais
+
+No mesmo ambiente que inicia a API:
+
+```bash
+cd /opt/climasaas
+npm run database:where -- --conectar
+```
+
+O comando usa DATABASE_URL e consulta somente SELECT 1 em transacao somente leitura. Nao imprime senha nem URL de conexao. Se o codigo publicado ainda nao incluir esse comando, a verificacao deve ser realizada por SSM com saida limitada ao provedor/hostname, nunca usando cat .env ou dump de variaveis.
+
+Neon e AWS sao provedores distintos mesmo quando o endpoint Neon menciona uma regiao aws. PostgreSQL em 127.0.0.1 dentro da EC2 fica na instancia, mas nao e RDS. Um health check com database=ok confirma conectividade, nao o provedor e nem a existencia de backups.

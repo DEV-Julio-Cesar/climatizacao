@@ -17,6 +17,12 @@ export const api = axios.create({
 // Evita múltiplos refreshes simultâneos quando várias requisições recebem
 // 401 ao mesmo tempo (ex.: ao recarregar uma página com muitos widgets).
 let _refreshPromise = null;
+let accessToken=null;
+let sessionVersion=0;
+export const getAccessToken=()=>accessToken;
+export const setAccessToken=value=>{accessToken=value;};
+localStorage.removeItem('climasaas_token');
+localStorage.removeItem('climasaas_refresh_token');
 
 /**
  * Tenta renovar o access-token usando o refresh-token armazenado.
@@ -28,6 +34,7 @@ async function renovarSessao() {
   _refreshPromise = (async () => {
     // Usa fetch nativo para não passar pelo interceptor do axios
     // (evitaria loop infinito se o /auth/refresh também devolvesse 401)
+    const version=sessionVersion;
     const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
@@ -38,7 +45,9 @@ async function renovarSessao() {
     if (!res.ok) throw new Error('Refresh falhou.');
 
     const dados = await res.json();
-    localStorage.setItem('climasaas_token', dados.token);
+    if(version!==sessionVersion)throw new Error('Sessao encerrada.');
+    setAccessToken(dados.token);
+    if(dados.usuario)localStorage.setItem('climasaas_usuario',JSON.stringify(dados.usuario));
     return dados.token;
   })().finally(() => { _refreshPromise = null; });
 
@@ -48,7 +57,7 @@ async function renovarSessao() {
 // ─── Interceptor de request ────────────────────────────────────────────────
 // Injeta o token de acesso em todos os requests autenticados.
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('climasaas_token');
+  const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -62,7 +71,7 @@ api.interceptors.response.use(
     const config = error.config;
 
     // Só trata 401 em requisições que ainda não foram retentadas
-    if (error.response?.status !== 401 || config._retried) {
+    if (error.response?.status !== 401 || !config || config._retried || ['/login','/auth/refresh','/auth/refresh/logout','/conta/logout','/conta/senha','/conta/empresa','/conta/dados'].includes(config.url)) {
       return Promise.reject(error);
     }
 
@@ -76,17 +85,19 @@ api.interceptors.response.use(
       return api(config);
     } catch {
       // Refresh falhou → sessão expirada definitivamente
-      localStorage.removeItem('climasaas_token');
-      localStorage.removeItem('climasaas_usuario');
+      limparSessao();
       window.dispatchEvent(new Event('climasaas:session-expired'));
       return Promise.reject(error);
     }
   },
 );
 
-export function limparSessao(){for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
+export const restaurarSessao=renovarSessao;
+export function limparSessao(){sessionVersion++;accessToken=null;for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
 
 export async function encerrarSessao() {
+  sessionVersion++;
+  if(_refreshPromise)await _refreshPromise.catch(()=>{});
   try {
     await api.post('/auth/refresh/logout', {});
   } finally {

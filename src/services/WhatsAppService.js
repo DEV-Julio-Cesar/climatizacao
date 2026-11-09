@@ -1,3 +1,5 @@
+const db = require('../config/database');
+const logger = require('../config/logger');
 const axios = require('axios');
 
 // Integração com a Meta WhatsApp Cloud API
@@ -23,8 +25,16 @@ class WhatsAppService {
     return Boolean(this.phoneNumberId && this.token && !this.phoneNumberId.startsWith('SEU_') && !this.token.startsWith('SEU_'));
   }
 
+  async contexto(empresaId) {
+    if(!Number.isInteger(Number(empresaId)) || !empresaId)throw new Error('Empresa do envio nao informada.');
+    const r=await db.query(`SELECT n.phone_number_id FROM whatsapp_numeros n JOIN empresas e ON e.id=n.empresa_id WHERE n.empresa_id=$1 AND e.ativo=TRUE AND e.deleted_at IS NULL ORDER BY n.phone_number_id LIMIT 2`,[empresaId]);
+    if(r.rows.length!==1)throw new Error('Configure um unico numero WhatsApp para esta empresa.');
+    const phoneNumberId=r.rows[0].phone_number_id;
+    return {phoneNumberId,apiUrl:`https://graph.facebook.com/${this.graphVersion}/${phoneNumberId}/messages`};
+  }
   // Envia uma mensagem de texto simples
-  async enviarMensagem(telefone, mensagem) {
+  async enviarMensagem(telefone, mensagem, empresaId) {
+    const context=await this.contexto(empresaId);
     const payload = {
       messaging_product: 'whatsapp',
       to:                this._formatarNumero(telefone),
@@ -33,11 +43,10 @@ class WhatsAppService {
     };
 
     try {
-      const response = await axios.post(this.apiUrl, payload, { headers: this.headers });
-      console.log('✅ WhatsApp texto enviado:', response.data);
+      const response = await axios.post(context.apiUrl, payload, { headers: this.headers });
       return response.data;
     } catch (error) {
-      console.error('❌ Falha ao enviar texto WhatsApp:', error.response?.data || error.message);
+      logger.erro('whatsapp.envio_falhou',{status:error.response?.status});
       const detalhe = error.response?.data?.error?.message;
       throw new Error(detalhe || 'Falha ao enviar mensagem pela Meta.');
     }
@@ -47,7 +56,8 @@ class WhatsAppService {
   // O template 'os_finalizada' deve ter:
   //   - Header: tipo DOCUMENT (variável)
   //   - Body: variável {{1}} com o nome do cliente
-  async enviarPdfOs(telefone, nomeCliente, urlPdf) {
+  async enviarPdfOs(telefone, nomeCliente, urlPdf, empresaId) {
+    const context=await this.contexto(empresaId);
     const payload = {
       messaging_product: 'whatsapp',
       to:                this._formatarNumero(telefone),
@@ -79,17 +89,17 @@ class WhatsAppService {
     };
 
     try {
-      const response = await axios.post(this.apiUrl, payload, { headers: this.headers });
-      console.log('✅ PDF enviado via WhatsApp:', response.data);
+      const response = await axios.post(context.apiUrl, payload, { headers: this.headers });
       return response.data;
     } catch (error) {
       // Falha silenciosa: não derruba a API principal se o WhatsApp cair
-      console.error('❌ Falha ao enviar PDF WhatsApp:', error.response?.data || error.message);
+      logger.erro('whatsapp.envio_falhou',{status:error.response?.status});
     }
   }
 
   // Formata o número para o padrão internacional sem '+' (ex: 5511999998888)
-  async enviarLembreteAgendamento(telefone, dados) {
+  async enviarLembreteAgendamento(telefone, dados, empresaId) {
+    const context=await this.contexto(empresaId);
     const instante = new Date(dados.agendamento);
     const data = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(instante);
     const hora = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(instante);
@@ -101,7 +111,7 @@ class WhatsAppService {
         components: [{ type: 'body', parameters: [dados.cliente, String(dados.ordem), data, hora, dados.tecnico].map((text) => ({ type: 'text', text })) }],
       },
     };
-    try { return (await axios.post(this.apiUrl, payload, { headers: this.headers })).data; }
+    try { return (await axios.post(context.apiUrl, payload, { headers: this.headers })).data; }
     catch (error) { throw new Error(error.response?.data?.error?.message || 'A Meta recusou o template de lembrete.'); }
   }
 
@@ -115,16 +125,17 @@ class WhatsAppService {
     return apenasDigitos;
   }
 
-  async enviarDocumento(telefone, buffer, filename, caption) {
+  async enviarDocumento(telefone, buffer, filename, caption, empresaId) {
+    const context=await this.contexto(empresaId);
     if (!this.configurado()) throw new Error('Integração do WhatsApp não configurada.');
     const form = new FormData();
     form.append('messaging_product', 'whatsapp');
     form.append('type', 'application/pdf');
     form.append('file', new Blob([buffer], { type:'application/pdf' }), filename);
     try {
-      const upload=await axios.post(`https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}/media`,form,{headers:{Authorization:`Bearer ${this.token}`}});
+      const upload=await axios.post(`https://graph.facebook.com/${this.graphVersion}/${context.phoneNumberId}/media`,form,{headers:{Authorization:`Bearer ${this.token}`}});
       const payload={messaging_product:'whatsapp',to:this._formatarNumero(telefone),type:'document',document:{id:upload.data.id,filename,caption}};
-      return (await axios.post(this.apiUrl,payload,{headers:this.headers})).data;
+      return (await axios.post(context.apiUrl,payload,{headers:this.headers})).data;
     } catch(error) {
       const detalhe=error.response?.data?.error?.message;
       throw new Error(detalhe||'A Meta recusou o envio. Verifique a janela de 24 horas e o telefone do cliente.');

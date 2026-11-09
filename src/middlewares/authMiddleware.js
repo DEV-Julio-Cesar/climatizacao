@@ -57,7 +57,7 @@ module.exports = async (req, res, next) => {
     }
     if (usuario.perfil) {
       const permissoes = new Set(padroes[usuario.perfil] || []);
-      for (const override of usuario.overrides || [])
+      for (const override of (usuario.overrides || []).filter(p => p.permissao !== '*'))
         override.permitido ? permissoes.add(override.permissao) : permissoes.delete(override.permissao);
       decoded = { ...decoded, perfil: usuario.perfil, nome: usuario.nome, permissoes: [...permissoes] };
     }

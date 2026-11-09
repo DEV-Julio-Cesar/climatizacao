@@ -53,7 +53,7 @@ plataforma SaaS para gestão de serviços de climatização (ar-condicionado).
                         └────────────┬────────────┘
                                      │
                         ┌────────────▼────────────┐
-                        │   PostgreSQL (Neon)      │
+                        │   PostgreSQL                 │
                         │   25+ tabelas            │
                         │   Multi-tenant           │
                         └─────────────────────────┘
@@ -90,7 +90,6 @@ Detalhado em [04-fluxo-os.md](./04-fluxo-os.md).
 | Arquivo | Conteúdo |
 |---|---|
 | [`DEPLOY_AWS_EC2_UBUNTU.md`](./DEPLOY_AWS_EC2_UBUNTU.md) | Passo a passo para subir na AWS EC2 Ubuntu |
-| `DEPLOY.md` | Deploy no Render (configuração atual de produção) |
 | `Dockerfile` | Imagem Docker multi-stage para containerização |
 | `.github/workflows/deploy-aws.yml` | CI/CD GitHub Actions → AWS ECS |
 | `src/database/migration.sql` | Schema completo do banco |

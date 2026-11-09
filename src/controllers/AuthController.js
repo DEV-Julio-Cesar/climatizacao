@@ -103,7 +103,7 @@ class AuthController {
         [usuario.id],
       );
       const base = new Set(padroes[usuario.perfil] || []);
-      for (const item of overrides.rows)
+      for (const item of overrides.rows.filter(p => p.permissao !== '*'))
         item.permitido ? base.add(item.permissao) : base.delete(item.permissao);
       const permissoes = [...base];
 
@@ -184,7 +184,7 @@ class AuthController {
         [usuario.id],
       );
       const base = new Set(padroes[usuario.perfil] || []);
-      for (const item of overrides.rows)
+      for (const item of overrides.rows.filter(p => p.permissao !== '*'))
         item.permitido ? base.add(item.permissao) : base.delete(item.permissao);
       const permissoes = [...base];
 
@@ -245,7 +245,10 @@ class AuthController {
       if (token) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         if (decoded.token_use === 'refresh' && decoded.sid)
-          await db.query('UPDATE sessoes SET revogada_em=NOW() WHERE id=$1 AND usuario_id=$2 AND empresa_id=$3', [decoded.sid, decoded.usuario_id, decoded.empresa_id]);
+          await db.transaction(async c => {
+            await c.query('UPDATE sessoes SET revogada_em=NOW() WHERE id=$1 AND usuario_id=$2 AND empresa_id=$3',[decoded.sid,decoded.usuario_id,decoded.empresa_id]);
+            await c.query('UPDATE dispositivos_push SET ativo=FALSE,updated_at=NOW() WHERE usuario_id=$1 AND empresa_id=$2',[decoded.usuario_id,decoded.empresa_id]);
+          });
       }
     } catch (error) {
       if (!(error instanceof jwt.JsonWebTokenError)) return res.status(503).json({ erro: 'Não foi possível encerrar a sessão. Tente novamente.' });

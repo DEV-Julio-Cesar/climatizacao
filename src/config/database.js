@@ -1,16 +1,15 @@
 const { Pool } = require('pg');
 
 const connectionString = process.env.DATABASE_URL;
-const isLocal = !connectionString || /localhost|127\.0\.0\.1/.test(connectionString);
+const { opcoesConexao } = require('./databaseUrl');
 
 // Em produção exige certificado SSL válido (rejectUnauthorized: true).
 // Para bancos locais ou testes sem SSL, defina DB_SSL_REJECT_UNAUTHORIZED=false no .env.
 const sslRejectUnauthorized = process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false';
 
 const pool = new Pool({
-  connectionString,
-  ssl: isLocal ? false : { rejectUnauthorized: sslRejectUnauthorized },
-  // Limites de conexão seguros para ambientes serverless (Neon/Render)
+  ...opcoesConexao(connectionString, sslRejectUnauthorized),
+  // Limites de conexão seguros para instancias da API e bancos PostgreSQL externos
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

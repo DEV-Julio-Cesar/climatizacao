@@ -109,13 +109,9 @@ Uma decisão de design importante: **fotos e PDFs são armazenados diretamente n
 
 ## Infraestrutura de Produção
 
-O sistema atualmente roda no **Render** (arquivo `render.yaml`):
-- Serviço web Node.js, plano free, região Ohio
-- Build: instala API + web, faz build do Vite
-- Start: executa migrations → inicia servidor
-- Banco: PostgreSQL externo via Neon
+A aplicacao utiliza exclusivamente infraestrutura AWS. O roteiro EC2 Ubuntu esta em [DEPLOY_AWS_EC2_UBUNTU.md](DEPLOY_AWS_EC2_UBUNTU.md); o repositorio tambem contem Docker e pipeline para ECS.
 
-Há também uma configuração Docker (`Dockerfile`) e pipeline CI/CD (`deploy-aws.yml`) para AWS EC2/ECS.
+O provedor do banco depende da DATABASE_URL efetiva em cada ambiente: o .env local aponta para Neon, enquanto o roteiro EC2 provisiona PostgreSQL na propria instancia. O banco de producao precisa ser confirmado no ambiente do servico; hospedar a API na AWS nao implica que o banco esteja na AWS.
 
 ---
 

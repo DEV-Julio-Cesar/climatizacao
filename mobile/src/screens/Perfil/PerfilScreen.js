@@ -1,3 +1,5 @@
+import { api, BASE_URL } from '../../services/api';
+import EmpresaPerfil from './EmpresaPerfil';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Linking, Platform, ScrollView, StyleSheet, Switch,
@@ -68,6 +70,7 @@ export default function PerfilScreen({ onLogout, navigation }) {
   };
 
   const sair = async () => {
+    try { await api.logout(); } catch(e) { return Alert.alert('Não foi poss?vel encerrar a sessão', e.message); }
     await cancelarTodosLembretes().catch(() => {});
     await Promise.all([
       SecureStore.deleteItemAsync('climasaas_token'),
@@ -141,6 +144,7 @@ export default function PerfilScreen({ onLogout, navigation }) {
         </View>
       </View>
 
+      <EmpresaPerfil/>
       <Text style={styles.sectionTitle}>Preferências do aplicativo</Text>
       <View style={styles.card}>
         <View style={styles.row}>
@@ -256,7 +260,7 @@ export default function PerfilScreen({ onLogout, navigation }) {
         <Text style={styles.secondaryText}>Central de sincronização offline</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.link} onPress={() => Linking.openURL('https://climasaas-api.onrender.com/privacidade')}>
+      <TouchableOpacity style={styles.link} onPress={() => Linking.openURL(`${BASE_URL.replace(/\/$/, '')}/privacidade`)}>
         <Ionicons name="open-outline" size={18} color={colors.primary} />
         <Text style={styles.linkText}>Política de privacidade</Text>
       </TouchableOpacity>

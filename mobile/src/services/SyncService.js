@@ -1,5 +1,5 @@
 import * as Network from 'expo-network';
-import { listarFila, registrarFalha, removerFila, descartar } from '../database/sqlite';
+import { obterEscopoOffline, verificarEscopoOffline, listarFila, registrarFalha, removerFila, descartar } from '../database/sqlite';
 import { api } from './api';
 import * as FileSystem from 'expo-file-system/legacy';
 const { processarFila } = require('./syncPolicy.cjs');
@@ -24,13 +24,14 @@ export async function tentarSincronizarOffline(itemId = null) {
   const rede = await Network.getNetworkStateAsync();
   if (!rede.isConnected || rede.isInternetReachable === false) return { enviados: 0 };
 
-  const fila = await listarFila();
+  const scope = await obterEscopoOffline();
+  const fila = await listarFila(scope);
   const itens = itemId === null ? fila : fila.filter((v) => v.id === itemId);
   return processarFila(itens, {
-    despachar: _despachar,
-    remover: removerFila,
-    registrarFalha,
-    descartar,
+    despachar: async (...args) => { await verificarEscopoOffline(scope); return _despachar(scope,...args); },
+    remover: id => removerFila(id,scope),
+    registrarFalha: (id,e) => registrarFalha(id,e,scope),
+    descartar: id => descartar(id,scope),
   });
 }
 
@@ -38,45 +39,46 @@ export async function tentarSincronizarOffline(itemId = null) {
  * Mapeia o tipo do item da fila para a chamada de API correspondente.
  * Extrai `_client_uuid` do payload antes de enviar para não poluir os dados.
  */
-async function _despachar(tipo, payload, clientUuid) {
+async function _despachar(scope, tipo, payload, clientUuid) {
+  const boundApi = {chamadaAutenticada:(endpoint,method,body)=>api.chamadaAutenticada(endpoint,method,body,0,scope),uploadFoto:(...args)=>api.uploadFoto(...args,scope)};
   // Remove a chave interna antes de enviar ao servidor
   // eslint-disable-next-line no-unused-vars
   const { _client_uuid, ...dados } = payload;
 
   switch (tipo) {
     case 'CRIAR_OS':
-      return api.chamadaAutenticada('/os', 'POST', dados);
+      return boundApi.chamadaAutenticada('/os', 'POST', dados);
 
     case 'STATUS_OS':
-      return api.chamadaAutenticada(
+      return boundApi.chamadaAutenticada(
         `/os/${dados.os_id}/status`,
         'PATCH',
         { novo_status: dados.novo_status },
       );
 
     case 'EVENTO_OS':
-      return api.chamadaAutenticada(
+      return boundApi.chamadaAutenticada(
         `/os/${dados.os_id}/eventos`,
         'POST',
         dados.dados,
       );
 
     case 'EXECUCAO_OS':
-      return api.chamadaAutenticada(
+      return boundApi.chamadaAutenticada(
         `/os/${dados.os_id}/execucao`,
         'PATCH',
         dados.dados,
       );
 
     case 'RETORNO_OS':
-      return api.chamadaAutenticada(
+      return boundApi.chamadaAutenticada(
         `/os/${dados.os_id}/retorno`,
         'POST',
         dados.dados,
       );
 
     case 'AGENDAR_OS':
-      return api.chamadaAutenticada(
+      return boundApi.chamadaAutenticada(
         `/os/${dados.os_id}/agendar`,
         'PATCH',
         dados.dados,
@@ -85,7 +87,7 @@ async function _despachar(tipo, payload, clientUuid) {
     case 'FOTO_OS': {
       // Passa client_uuid para deduplicação no servidor
       const metadados = { ...(dados.metadados || {}), client_uuid: clientUuid };
-      const resultado = await api.uploadFoto(
+      const resultado = await boundApi.uploadFoto(
         dados.os_id,
         dados.tipo,
         { uri: dados.uri, name: dados.nome, type: dados.mime },

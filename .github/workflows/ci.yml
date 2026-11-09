@@ -1,10 +1,11 @@
 name: CI
 
 on:
+  workflow_call:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 jobs:
   validate:
@@ -22,6 +23,8 @@ jobs:
             mobile/package-lock.json
       - name: Instalar API
         run: npm ci
+      - name: Instalar aplicativo
+        run: npm --prefix mobile ci
       - name: Testar API
         run: npm test
       - name: Auditar dependências da API
@@ -32,7 +35,34 @@ jobs:
         run: npm --prefix web run build
       - name: Auditar painel
         run: npm --prefix web audit --omit=dev --audit-level=high
-      - name: Instalar aplicativo
-        run: npm --prefix mobile ci
       - name: Validar aplicativo Expo
         run: npm --prefix mobile run check
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: security_test
+          POSTGRES_PASSWORD: disposable_ci_password
+          POSTGRES_DB: security_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U security_test -d security_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verificar seguranca em PostgreSQL descartavel
+        run: npm run test:postgres
+        env:
+          SECURITY_TEST_DATABASE_URL: postgresql://security_test:disposable_ci_password@127.0.0.1:5432/security_test

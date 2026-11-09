@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, getAccessToken, restaurarSessao } from './api';
 
 export function conectarEventos(onEvent) {
   const controller = new AbortController();
@@ -7,15 +7,14 @@ export function conectarEventos(onEvent) {
 
   const conectar = async () => {
     try {
-      const token = localStorage.getItem('climasaas_token');
+      const token = getAccessToken();
       if (!token || !ativo) return;
       const response = await fetch(`${api.defaults.baseURL}/eventos/stream`, {
         headers:{ Authorization:`Bearer ${token}`, Accept:'text/event-stream' },
         signal:controller.signal,
       });
       if (response.status === 401) {
-        const renovada = await api.post('/auth/refresh', { cliente:'web' });
-        localStorage.setItem('climasaas_token', renovada.data.token);
+        await restaurarSessao();
         throw new Error('Sessão renovada; reconectando stream');
       }
       if (!response.ok || !response.body) throw new Error('Stream indisponível');

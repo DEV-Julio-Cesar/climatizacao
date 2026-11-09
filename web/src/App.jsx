@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Login from './pages/Login';
 import RecuperarSenha from './pages/RecuperarSenha';
-import { api, encerrarSessao, limparSessao } from './services/api';
+import { api, encerrarSessao, limparSessao, getAccessToken, setAccessToken, restaurarSessao } from './services/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
@@ -55,8 +55,9 @@ export default function App(){
 }
 
 function Painel() {
-  const [token, setToken] = useState(() => localStorage.getItem('climasaas_token'));
+  const [token, setToken] = useState(undefined);
   const [user, setUser] = useState(readUser);
+  useEffect(()=>{let active=true;restaurarSessao().then(t=>{if(active){setUser(readUser());setToken(t);}}).catch(()=>{if(active){limparSessao();setToken(null);setUser({});}});return()=>{active=false;};},[]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [online, setOnline] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('climasaas_tema') || 'sistema');
@@ -102,9 +103,10 @@ function Painel() {
     return () => media.removeEventListener('change', aplicar);
   }, [theme]);
 
+  if (token===undefined) return <div role="status">Carregando sess?o...</div>;
   if (!token) {
     return <Login onLogin={(newToken, newUser) => {
-      localStorage.setItem('climasaas_token', newToken);
+      setAccessToken(newToken);
       localStorage.setItem('climasaas_usuario', JSON.stringify(newUser));
       setUser(newUser);
       setToken(newToken);

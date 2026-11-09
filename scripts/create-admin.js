@@ -1,10 +1,11 @@
 require('dotenv').config();
+const { normalizar, validarDocumento } = require('../src/validators/documento');
 const bcrypt = require('bcryptjs');
 const db = require('../src/config/database');
 
 const dados = {
   empresa: String(process.env.ADMIN_COMPANY || '').trim(),
-  cnpj: String(process.env.ADMIN_CNPJ || '').replace(/\D/g, ''),
+  cnpj: normalizar(process.env.ADMIN_CNPJ),
   nome: String(process.env.ADMIN_NAME || '').trim(),
   email: String(process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
   senha: String(process.env.ADMIN_PASSWORD || ''),
@@ -12,7 +13,7 @@ const dados = {
 
 function validar() {
   if (dados.empresa.length < 2) throw new Error('Nome da empresa inválido.');
-  if (dados.cnpj.length !== 14) throw new Error('CNPJ deve possuir 14 dígitos.');
+  if (!validarDocumento(dados.cnpj, 'CNPJ')) throw new Error('CNPJ deve possuir 14 dígitos.');
   if (dados.nome.length < 2) throw new Error('Nome do administrador inválido.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados.email)) throw new Error('E-mail inválido.');
   if (dados.senha.length < 12 || !/[A-Za-z]/.test(dados.senha) || !/\d/.test(dados.senha) || !/[^A-Za-z0-9]/.test(dados.senha))
@@ -23,7 +24,7 @@ async function executar() {
   try {
     validar();
     const resultado = await db.transaction(async client => {
-      let empresa = (await client.query('SELECT id,nome FROM empresas WHERE regexp_replace(cnpj, \'\\D\', \'\', \'g\')=$1 FOR UPDATE', [dados.cnpj])).rows[0];
+      let empresa = (await client.query('SELECT id,nome FROM empresas WHERE regexp_replace(upper(cnpj), \'[^A-Z0-9]\', \'\', \'g\')=$1 FOR UPDATE', [dados.cnpj])).rows[0];
       if (!empresa) {
         empresa = (await client.query(
           'INSERT INTO empresas(nome,cnpj,email) VALUES($1,$2,$3) RETURNING id,nome',

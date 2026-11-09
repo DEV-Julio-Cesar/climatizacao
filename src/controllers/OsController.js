@@ -437,12 +437,12 @@ async function _gerarEPersistirPdf(id, usuario, req) {
     const pdfUrl = `${baseUrl}/arquivos/ordens/${pdfStorageKey}.pdf`;
 
     try { await db.query(
-      'UPDATE ordens_servico SET pdf_url=$1,pdf_storage_key=$2,pdf_conteudo=$3 WHERE id=$4 AND empresa_id=$5',
+      'UPDATE ordens_servico SET pdf_url=$1,pdf_storage_key=$2,pdf_conteudo=$3,pdf_compartilhamento_revogado=FALSE WHERE id=$4 AND empresa_id=$5',
       [pdfUrl, pdfStorageKey, externo ? null : pdfConteudo, id, usuario.empresa_id],
     ); } catch (error) { if (externo) await ObjectStorage.remover(objectKey).catch(() => {}); throw error; }
 
     if (dados.telefone_whatsapp && WhatsAppService.configurado()) {
-      void WhatsAppService.enviarPdfOs(dados.telefone_whatsapp, dados.cliente_nome, pdfUrl);
+      void WhatsAppService.enviarPdfOs(dados.telefone_whatsapp, dados.cliente_nome, require('../services/ArquivoUrlService').assinarPdf(pdfUrl), usuario.empresa_id).catch(()=>logger.erro('whatsapp.pdf_falhou',{os_id:id}));
     }
 
     return pdfUrl;

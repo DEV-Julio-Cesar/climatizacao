@@ -5,7 +5,7 @@ const Email=require('./EmailService');
 const falha=()=>Object.assign(new Error('Link inválido, expirado ou já utilizado. Solicite uma nova recuperação.'),{status:400});
 const hash=token=>crypto.createHash('sha256').update(token).digest('hex');
 function chaveEmail(){
-  const segredo=process.env.EMAIL_QUEUE_SECRET||process.env.JWT_SECRET;
+  const segredo=process.env.EMAIL_QUEUE_SECRET||(process.env.NODE_ENV!=='production'?process.env.JWT_SECRET:null);
   if(!segredo)throw new Error('Segredo de envio não configurado.');
   return crypto.createHash('sha256').update(`climasaas:email:${segredo}`).digest();
 }

@@ -4,6 +4,10 @@ Consolidação de todas as melhorias identificadas para o sistema.
 Itens do mobile também estão em [05-mobile.md](./05-mobile.md).  
 Itens do web também estão em [06-web.md](./06-web.md).
 
+## Etapa atual ? 08/11/2026
+
+As correcoes de seguranca e a preparacao local da publicacao estao registradas em [proxima-etapa-publicacao.md](proxima-etapa-publicacao.md). A suite atual possui 96 testes aprovados; CI e deploy foram preparados para usa-los como bloqueio antes da publicacao. O proximo criterio de aceite e homologar configuracao, migracoes e nova compilacao mobile. As tabelas abaixo continuam como historico e nao substituem esse estado.
+
 ## Estado auditado — 31/10/2026
 
 Esta seção é a fonte de verdade para execução. As tabelas históricas abaixo

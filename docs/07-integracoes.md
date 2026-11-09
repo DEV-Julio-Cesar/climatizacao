@@ -158,7 +158,7 @@ Usado em:
 
 ---
 
-## PostgreSQL via Neon
+## PostgreSQL por ambiente
 
 **Arquivo:** `src/config/database.js`
 
@@ -170,7 +170,7 @@ Usado em:
 - Controlável via `DB_SSL_REJECT_UNAUTHORIZED=false` para ambientes sem certificado válido
 - Helper `transaction(callback)` para transações automáticas com ROLLBACK em erro
 
-**Neon:** banco PostgreSQL serverless. URL inclui `?sslmode=require`. Usa pooler de conexões para compatibilidade com ambiente serverless/stateless do Render.
+**Ambientes:** o .env local usa Neon. O roteiro AWS EC2 cria PostgreSQL local na instancia. A aplicacao usa DATABASE_URL para selecionar o banco; a hospedagem da API e independente da hospedagem do banco.
 
 ---
 

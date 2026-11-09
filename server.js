@@ -1,6 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+require('./src/config/security').validarConfiguracao();
 const createApp = require('./src/app');
 
 const port = Number(process.env.PORT) || 3000;

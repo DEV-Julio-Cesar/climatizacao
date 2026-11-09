@@ -1,3 +1,4 @@
+import { obterEscopoOffline, verificarEscopoOffline } from '../database/sqlite';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { File } from 'expo-file-system';
@@ -15,6 +16,7 @@ export const configurarSessaoExpirada = (handler) => { aoExpirarSessao = handler
 
 // Evita múltiplos refreshes simultâneos — reutiliza a mesma Promise em andamento
 let _refreshPromise = null;
+let generation = 0;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -37,6 +39,7 @@ async function renovarSessao() {
   if (_refreshPromise) return _refreshPromise;
 
   _refreshPromise = (async () => {
+    const version = generation;
     const refreshToken = await getRefreshToken();
     if (!refreshToken) throw Object.assign(new Error('Sessão expirada.'), { status: 401 });
 
@@ -48,6 +51,7 @@ async function renovarSessao() {
     if (!response.ok) throw Object.assign(new Error('Sessão expirada.'), { status: 401 });
 
     const dados = await response.json();
+    if(version!==generation)throw Object.assign(new Error('Sessão encerrada.'),{status:503});
     await SecureStore.setItemAsync('climasaas_token', dados.token);
     if (dados.refresh_token) {
       await SecureStore.setItemAsync('climasaas_refresh_token', dados.refresh_token);
@@ -105,7 +109,19 @@ function normalizarErro(error) {
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const api = {
+  async logout() {
+    generation++;
+    if(_refreshPromise)await _refreshPromise.catch(()=>{});
+    const refresh=await getRefreshToken();
+    const token=await SecureStore.getItemAsync('climasaas_token');
+    // Keep credentials locally if the server cannot revoke: do not claim a successful logout offline.
+    const response=await fetchComTimeout(`${BASE_URL}${refresh?'/logout':'/conta/logout'}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({refresh_token:refresh})});
+    await parse(response);
+    await Promise.all(['climasaas_token','climasaas_refresh_token','climasaas_usuario'].map(k=>SecureStore.deleteItemAsync(k)));
+  },
   async login(email, senha) {
+    generation++;
+    if(_refreshPromise)await _refreshPromise.catch(()=>{});
     try {
       const response = await fetchComTimeout(`${BASE_URL}/login`, {
         method: 'POST',
@@ -128,7 +144,10 @@ export const api = {
    * - Se receber 401, tenta renovar o token via refresh.
    * - Se o refresh também falhar, limpa o armazenamento e dispara onSessaoExpirada.
    */
-  async chamadaAutenticada(endpoint, metodo = 'GET', body, _tentativa = 0) {
+  async chamadaAutenticada(endpoint, metodo = 'GET', body, _tentativa = 0, expectedScope) {
+    const version=generation;
+    const scope=expectedScope||await obterEscopoOffline();
+    await verificarEscopoOffline(scope);
     let tokenAtual;
     try { tokenAtual = await getToken(); } catch {
       await SecureStore.deleteItemAsync('climasaas_token');
@@ -136,6 +155,8 @@ export const api = {
       throw Object.assign(new Error('Sessão expirada. Faça login novamente.'), { status: 401 });
     }
 
+    await verificarEscopoOffline(scope);
+    if(version!==generation)throw Object.assign(new Error('Sessão alterada.'),{status:503});
     let response;
     try {
       response = await fetchComTimeout(`${BASE_URL}${endpoint}`, {
@@ -151,11 +172,14 @@ export const api = {
     }
 
     // Token expirado → tenta renovar uma vez
+    if(version!==generation)throw Object.assign(new Error('Sessão alterada.'),{status:503});
+    await verificarEscopoOffline(scope);
     if (response.status === 401 && _tentativa === 0) {
       try {
         await renovarSessao();
-        return this.chamadaAutenticada(endpoint, metodo, body, 1);
-      } catch {
+        return this.chamadaAutenticada(endpoint, metodo, body, 1, scope);
+      } catch (error) {
+        if(version!==generation)throw Object.assign(new Error('Sessao alterada.'),{status:503});
         await SecureStore.deleteItemAsync('climasaas_token');
         await SecureStore.deleteItemAsync('climasaas_refresh_token');
         aoExpirarSessao?.();
@@ -163,10 +187,16 @@ export const api = {
       }
     }
 
-    return parse(response);
+    const result=await parse(response);
+    if(version!==generation)throw Object.assign(new Error('Sessao alterada.'),{status:503});
+    await verificarEscopoOffline(scope);
+    return result;
   },
 
-  async uploadFoto(osId, tipo, arquivo, metadados = {}) {
+  async uploadFoto(osId, tipo, arquivo, metadados = {}, expectedScope) {
+    const version=generation;
+    const scope=expectedScope||await obterEscopoOffline();
+    await verificarEscopoOffline(scope);
     let tokenAtual;
     try { tokenAtual = await getToken(); } catch {
       aoExpirarSessao?.();
@@ -185,6 +215,8 @@ export const api = {
 
     let response;
     try {
+      await verificarEscopoOffline(scope);
+      if(version!==generation)throw Object.assign(new Error('Sessão alterada.'),{status:503});
       response = await expoFetch(`${BASE_URL}/os/fotos`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${tokenAtual}` },
@@ -195,6 +227,8 @@ export const api = {
     }
 
     // Token expirado no upload → renova e tenta uma vez
+    if(version!==generation)throw Object.assign(new Error('Sessão alterada.'),{status:503});
+    await verificarEscopoOffline(scope);
     if (response.status === 401) {
       try {
         const novoToken = await renovarSessao();
@@ -206,12 +240,15 @@ export const api = {
             form2.append(chave, String(valor));
         });
         form2.append('imagem', file, arquivo.name || file.name);
-        response = await expoFetch(`${BASE_URL}/os/fotos`, {
+        await verificarEscopoOffline(scope);
+      if(version!==generation)throw Object.assign(new Error('Sessão alterada.'),{status:503});
+      response = await expoFetch(`${BASE_URL}/os/fotos`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${novoToken}` },
           body: form2,
         });
-      } catch {
+      } catch (error) {
+        if(version!==generation)throw Object.assign(new Error('Sessao alterada.'),{status:503});
         await SecureStore.deleteItemAsync('climasaas_token');
         await SecureStore.deleteItemAsync('climasaas_refresh_token');
         aoExpirarSessao?.();
@@ -219,6 +256,9 @@ export const api = {
       }
     }
 
-    return parse(response);
+    const result=await parse(response);
+    if(version!==generation)throw Object.assign(new Error('Sessao alterada.'),{status:503});
+    await verificarEscopoOffline(scope);
+    return result;
   },
 };

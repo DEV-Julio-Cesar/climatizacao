@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 async function aplicarMigracoes(db, diretorio = __dirname) {
-  const schema = fs.readFileSync(path.join(diretorio, 'migration.sql'), 'utf8');
+  const schema = fs.readFileSync(path.join(diretorio, 'migration.sql'), 'utf8').replace(/^\uFEFF/, '');
   await db.transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(782104)');
     await client.query(schema);
@@ -11,7 +11,7 @@ async function aplicarMigracoes(db, diretorio = __dirname) {
     for (const nome of fs.readdirSync(pasta).filter(nome => nome.endsWith('.sql')).sort()) {
       const aplicada = await client.query('SELECT nome FROM schema_migrations WHERE nome=$1', [nome]);
       if (aplicada.rows.length) continue;
-      await client.query(fs.readFileSync(path.join(pasta, nome), 'utf8'));
+      await client.query(fs.readFileSync(path.join(pasta, nome), 'utf8').replace(/^\uFEFF/, ''));
       await client.query('INSERT INTO schema_migrations(nome) VALUES ($1)', [nome]);
     }
   });

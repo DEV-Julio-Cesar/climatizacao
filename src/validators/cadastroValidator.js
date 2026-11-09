@@ -21,6 +21,7 @@ const documentoValido = (valor) => {
   return n.endsWith(`${d1}${d2}`);
 };
 const clienteSchema = z.object({
+  remover_documento:z.boolean().optional().default(false),
   id: z.coerce.number().int().positive().optional(),
   nome: z.string().trim().min(2).max(150), telefone: texto(20),
   cpf_cnpj: texto(18).refine(documentoValido, 'CPF ou CNPJ inválido.'), endereco: texto(255),

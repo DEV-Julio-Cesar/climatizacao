@@ -95,3 +95,7 @@ npm run dev
 ```
 
 Para produção, execute `npm run build` e publique a pasta `web/dist` em hospedagem estática, configurando `VITE_API_URL` com a URL HTTPS da API.
+
+## Infraestrutura AWS e verificacao do banco
+
+A API e o painel usam AWS. Consulte [DEPLOY_AWS_EC2_UBUNTU.md](docs/DEPLOY_AWS_EC2_UBUNTU.md). Execute `npm run database:where` no ambiente desejado para identificar o provedor sem exibir credenciais; acrescente `-- --conectar` para testar somente a conexao. O .env local aponta para Neon, independentemente da hospedagem AWS da API.

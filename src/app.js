@@ -25,6 +25,7 @@ const ArquivoUrlService = require('./services/ArquivoUrlService');
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.use((req,res,next)=>{const json=res.json.bind(res);res.json=body=>{res.setHeader('Cache-Control','no-store');return json(ArquivoUrlService.protegerResposta(body));};next();});
   app.set('trust proxy', 1);
   app.use((req, res, next) => {
     req.id = req.get('x-request-id') || crypto.randomUUID();
@@ -64,7 +65,8 @@ function createApp() {
   });
   app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-  app.use('/uploads', express.static(path.resolve(__dirname, '..', 'tmp', 'uploads')));
+  // Legacy upload files are never served publicly.
+  app.use('/uploads', (_req,res) => res.sendStatus(404));
   app.get('/arquivos/fotos/:chave', async (req, res) => {
     if (!ArquivoUrlService.validarFoto(req.params.chave, req.query.exp, req.query.sig)) {
       return res.status(403).json({ erro: 'Link de arquivo inválido ou expirado.' });
@@ -87,9 +89,10 @@ function createApp() {
     }
   });
   app.get('/arquivos/ordens/:chave.pdf', async (req, res) => {
+    if (!ArquivoUrlService.validarPdf(req.params.chave,req.query.exp,req.query.sig)) return res.status(403).json({erro:'Link inválido ou expirado.'});
     try {
       const resultado = await db.query(
-        'SELECT id,empresa_id,pdf_conteudo FROM ordens_servico WHERE pdf_storage_key=$1 AND deleted_at IS NULL',
+        'SELECT os.id,os.empresa_id,os.pdf_conteudo FROM ordens_servico os JOIN empresas e ON e.id=os.empresa_id WHERE os.pdf_storage_key=$1 AND os.deleted_at IS NULL AND os.pdf_compartilhamento_revogado=FALSE AND e.ativo=TRUE AND e.deleted_at IS NULL',
         [req.params.chave],
       );
       const arquivo = resultado.rows[0];
@@ -98,7 +101,7 @@ function createApp() {
       if (!conteudo) return res.status(404).json({ erro: 'Relatório não encontrado.' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="ordem_servico_${arquivo.id}.pdf"`);
-      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(conteudo);
     } catch (_error) {
@@ -139,16 +142,17 @@ function createApp() {
   const refreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { erro: 'Muitas tentativas de renovação de sessão. Aguarde e tente novamente.' } });
   app.post('/auth/refresh', refreshLimiter, AuthController.refresh);
-  app.post('/conta/senha', authMiddleware, AuthController.alterarSenha);
+  app.post('/conta/senha', loginLimiter, authMiddleware, AuthController.alterarSenha);
   app.get('/eventos/stream', authMiddleware, RealtimeService.conectar);
   // Direitos LGPD: portabilidade (GET) e exclusão (DELETE)
   app.get('/conta/dados',    authMiddleware, LgpdController.exportarDados);
-  app.delete('/conta/dados', authMiddleware, LgpdController.excluirDados);
+  app.delete('/conta/dados', loginLimiter, authMiddleware, LgpdController.excluirDados);
   app.use(whatsappRoutes);
   app.use(osRoutes);
   app.use(cadastroRoutes);
   app.use(financeiroRoutes);
   app.use(suprimentosRoutes);
+  app.use(require('./routes/conta.routes'));
   app.use(gestaoRoutes);
   app.use((_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
   app.use((error, _req, res, _next) => {

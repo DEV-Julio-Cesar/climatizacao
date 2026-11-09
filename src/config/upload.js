@@ -27,7 +27,7 @@ function validarMagicBytes(buffer, mimetype) {
 
 module.exports = {
   limits: { fileSize: MAX_SIZE_BYTES, files: 1 },
-  // O disco do Render é efêmero. O buffer é persistido no PostgreSQL pelo
+  // Arquivos sao persistidos no banco ou armazenamento de objetos pelo
   // FotoController para que evidências e assinaturas sobrevivam aos deploys.
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, callback) => {

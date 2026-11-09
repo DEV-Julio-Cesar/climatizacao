@@ -1,0 +1,40 @@
+﻿// Integration verification: dedicated disposable PostgreSQL only. Never loads .env.
+const assert=require('node:assert/strict');
+const crypto=require('crypto');
+const bcrypt=require('bcryptjs');
+const target=process.env.SECURITY_TEST_DATABASE_URL;
+if(!target)throw new Error('Set SECURITY_TEST_DATABASE_URL to a disposable local PostgreSQL database.');
+const url=new URL(target);
+if(!['127.0.0.1','localhost'].includes(url.hostname))throw new Error('Only loopback test databases are allowed.');
+process.env.DATABASE_URL=target;
+process.env.NODE_ENV='test';
+const db=require('../src/config/database');
+const {aplicarMigracoes}=require('../src/database/migrate');
+const lgpd=require('../src/controllers/LgpdController');
+const conta=require('../src/controllers/ContaController');
+const response=()=>({code:200,status(n){this.code=n;return this},json(d){this.data=d;return this},setHeader(){},sendStatus(n){this.code=n;return this}});
+async function main(){
+ await aplicarMigracoes(db);await aplicarMigracoes(db);
+ const tag=crypto.randomUUID();
+ const e=(await db.query('INSERT INTO empresas(nome,cnpj) VALUES($1,$2) RETURNING id',['Teste '+tag,null])).rows[0].id;
+ const base=String(e).padStart(12,'0');
+ const dv=(b,p)=>{const r=[...b].reduce((s,n,i)=>s+Number(n)*p[i],0)%11;return r<2?0:11-r;};
+ const d1=dv(base,[5,4,3,2,9,8,7,6,5,4,3,2]);const cnpj=base+d1+dv(base+d1,[6,5,4,3,2,9,8,7,6,5,4,3,2]);
+ const senha=await bcrypt.hash('Senha12345',4);
+ const ids=[];for(const perfil of ['ADMIN','TECNICO'])ids.push((await db.query('INSERT INTO usuarios(empresa_id,nome,email,senha_hash,perfil) VALUES($1,$2,$3,$4,$5) RETURNING id',[e,'Teste',`${perfil}.${tag}@example.test`,senha,perfil])).rows[0].id);
+ const u=ids[1],admin=ids[0];
+ await db.query("INSERT INTO dispositivos_push(empresa_id,usuario_id,token,plataforma) VALUES($1,$2,$3,'android')",[e,u,tag]);
+ await db.query("INSERT INTO sessoes(id,usuario_id,empresa_id,refresh_hash,expira_em) VALUES($1,$2,$3,$4,NOW()+INTERVAL '1 day')",[crypto.randomUUID(),u,e,'a'.repeat(64)]);
+ let r=response();await lgpd.exportarDados({usuarioLogado:{usuario_id:u,empresa_id:e},ip:'127.0.0.1'},r);assert.equal(r.code,200);assert(!('clientes_empresa' in r.data));
+ r=response();await conta.salvarEmpresa({usuarioLogado:{usuario_id:admin,empresa_id:e},body:{nome:'Empresa teste',cnpj,senha_atual:'Senha12345'}},r);assert.equal(r.code,200);
+ r=response();await lgpd.excluirDados({usuarioLogado:{usuario_id:admin,empresa_id:e},body:{confirmacao:'CONFIRMAR_EXCLUSAO',senha_atual:'Senha12345'}},r);assert.equal(r.code,409);
+ r=response();await lgpd.excluirDados({usuarioLogado:{usuario_id:u,empresa_id:e},body:{confirmacao:'CONFIRMAR_EXCLUSAO',senha_atual:'Senha12345'},ip:'127.0.0.1'},r);assert.equal(r.code,200);
+ assert.equal((await db.query('SELECT * FROM dispositivos_push WHERE usuario_id=$1',[u])).rows.length,0);
+ assert((await db.query('SELECT revogada_em FROM sessoes WHERE usuario_id=$1',[u])).rows[0].revogada_em);
+ assert.equal((await db.query('SELECT ativo FROM usuarios WHERE id=$1',[u])).rows[0].ativo,false);
+ await assert.rejects(db.query("INSERT INTO usuario_permissoes(usuario_id,permissao,permitido) VALUES($1,'*',TRUE)",[u]),e=>e.code==='23514');
+ const e2=(await db.query('INSERT INTO empresas(nome,cnpj) VALUES($1,$2) RETURNING id',['Outra',null])).rows[0].id;
+ await assert.rejects(db.query('UPDATE empresas SET cnpj=$1 WHERE id=$2',[cnpj.replace(/^(..)(...)(...)(....)(..)$/,'$1.$2.$3/$4-$5'),e2]),e=>e.code==='23505');
+ console.log('PostgreSQL: migrações repetidas, exportação, reautenticação, exclusão, sessões/push, último admin, curinga e CNPJ normalizado: OK');
+}
+main().catch(e=>{console.error(e.code||e.message);process.exitCode=1}).finally(()=>db.pool.end());

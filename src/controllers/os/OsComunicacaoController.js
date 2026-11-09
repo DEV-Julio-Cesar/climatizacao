@@ -16,7 +16,7 @@ class OsComunicacaoController {
       if (!WhatsAppService.configurado()) return res.status(503).json({ erro: 'Integração do WhatsApp não configurada.' });
       const enviado = await WhatsAppService.enviarLembreteAgendamento(os.cliente_telefone, {
         cliente: os.cliente_nome, agendamento: os.agendado_para, tecnico: os.tecnico_nome, ordem: os.id,
-      });
+      },req.usuarioLogado.empresa_id);
       return res.json({ mensagem: 'Lembrete enviado pelo WhatsApp.', mensagem_id: enviado?.messages?.[0]?.id || null });
     } catch (error) { return res.status(502).json({ erro: error.message || 'Falha ao enviar lembrete.' }); }
   }

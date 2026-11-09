@@ -1,5 +1,6 @@
+import PerfilEmpresa from './PerfilEmpresa';
 import React, { useState } from 'react';
-import { api } from '../services/api';
+import { api, limparSessao } from '../services/api';
 
 export default function MinhaConta() {
   const [form, setForm] = useState({ atual:'', nova:'', confirmar:'' });
@@ -12,10 +13,10 @@ export default function MinhaConta() {
     setSalvando(true);
     try {
       await api.post('/conta/senha', { senha_atual:form.atual, nova_senha:form.nova });
-      localStorage.removeItem('climasaas_token'); localStorage.removeItem('climasaas_usuario');
+      limparSessao();
       window.dispatchEvent(new Event('climasaas:session-expired'));
     } catch (e) { setErro(e.response?.data?.erro || 'Falha ao alterar senha.'); }
     finally { setSalvando(false); }
   };
-  return <div className="account-grid"><section className="panel account-card"><span className="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><p>Depois da alteração, você entrará novamente usando a nova senha.</p>{erro&&<div className="alert">{erro}</div>}<form onSubmit={salvar}><label>Senha atual</label><input type="password" autoComplete="current-password" value={form.atual} onChange={e=>setForm({...form,atual:e.target.value})} required/><label>Nova senha</label><input type="password" autoComplete="new-password" value={form.nova} onChange={e=>setForm({...form,nova:e.target.value})} minLength="8" required/><label>Confirmar nova senha</label><input type="password" autoComplete="new-password" value={form.confirmar} onChange={e=>setForm({...form,confirmar:e.target.value})} minLength="8" required/><small>Use no mínimo 8 caracteres, contendo letras e números.</small><button className="primary" disabled={salvando}>{salvando?'Alterando...':'Alterar senha'}</button></form></section></div>;
+  return <div className="account-grid"><PerfilEmpresa/><section className="panel account-card"><span className="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><p>Depois da alteração, você entrará novamente usando a nova senha.</p>{erro&&<div className="alert">{erro}</div>}<form onSubmit={salvar}><label>Senha atual</label><input type="password" autoComplete="current-password" value={form.atual} onChange={e=>setForm({...form,atual:e.target.value})} required/><label>Nova senha</label><input type="password" autoComplete="new-password" value={form.nova} onChange={e=>setForm({...form,nova:e.target.value})} minLength="8" required/><label>Confirmar nova senha</label><input type="password" autoComplete="new-password" value={form.confirmar} onChange={e=>setForm({...form,confirmar:e.target.value})} minLength="8" required/><small>Use no mínimo 8 caracteres, contendo letras e números.</small><button className="primary" disabled={salvando}>{salvando?'Alterando...':'Alterar senha'}</button></form></section></div>;
 }

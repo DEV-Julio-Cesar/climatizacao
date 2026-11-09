@@ -13,7 +13,13 @@ env:
   CONTAINER:   api
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   deploy:
+    needs: validate
     name: Build & Deploy
     runs-on: ubuntu-latest
     permissions:
