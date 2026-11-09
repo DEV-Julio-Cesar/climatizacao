@@ -58,6 +58,9 @@ async function renovarSessao() {
 // Injeta o token de acesso em todos os requests autenticados.
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
+  const empresa=sessionStorage.getItem('climasaas_empresa_contexto');
+  const user=JSON.parse(localStorage.getItem('climasaas_usuario')||'{}');
+  if(user.perfil==='MASTER' && empresa && !config.url?.startsWith('/master/'))config.headers['X-Empresa-Id']=empresa;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -93,7 +96,7 @@ api.interceptors.response.use(
 );
 
 export const restaurarSessao=renovarSessao;
-export function limparSessao(){sessionVersion++;accessToken=null;for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
+export function limparSessao(){sessionVersion++;accessToken=null;sessionStorage.removeItem('climasaas_empresa_contexto');for(const chave of ['climasaas_token','climasaas_refresh_token','climasaas_usuario'])localStorage.removeItem(chave);}
 
 export async function encerrarSessao() {
   sessionVersion++;

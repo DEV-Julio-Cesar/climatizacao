@@ -10,7 +10,7 @@ export function conectarEventos(onEvent) {
       const token = getAccessToken();
       if (!token || !ativo) return;
       const response = await fetch(`${api.defaults.baseURL}/eventos/stream`, {
-        headers:{ Authorization:`Bearer ${token}`, Accept:'text/event-stream' },
+        headers:{ Authorization:`Bearer ${token}`, Accept:'text/event-stream',...(sessionStorage.getItem('climasaas_empresa_contexto')?{'X-Empresa-Id':sessionStorage.getItem('climasaas_empresa_contexto')}:{}) },
         signal:controller.signal,
       });
       if (response.status === 401) {

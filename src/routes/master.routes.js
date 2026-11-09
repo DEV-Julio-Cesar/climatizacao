@@ -19,6 +19,6 @@ router.post('/master/empresas',async(req,res)=>{
  for(const [p,hash,role] of [[d.administrador,adminHash,'ADMIN'],[d.tecnico,techHash,'TECNICO']])if(p)await c.query('INSERT INTO usuarios(empresa_id,nome,email,senha_hash,perfil) VALUES($1,$2,$3,$4,$5)',[e.id,p.nome,p.email,hash,role]);
  await c.query("INSERT INTO seguranca_auditoria(empresa_id,usuario_id,acao) VALUES($1,$2,'MASTER_EMPRESA_CRIADA')",[e.id,req.usuarioLogado.usuario_id]);return e;});
  return res.status(201).json({mensagem:'Empresa e acessos criados.',empresa});
- }catch(e){return res.status(e.code==='23505'?409:500).json({erro:e.code==='23505'?'CNPJ ou email ja cadastrado.':'Falha ao criar empresa.'});}
+ }catch(e){require('../config/logger').erro('master.criar_empresa',{erro_codigo:e.code,request_id:req.id});return res.status(e.code==='23505'?409:500).json({erro:e.code==='23505'?'CNPJ ou email ja cadastrado.':'Falha ao criar empresa.'});}
 });
 module.exports=router;

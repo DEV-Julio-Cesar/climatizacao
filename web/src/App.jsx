@@ -39,6 +39,7 @@ function readUser() {
 }
 
 function canAccess(user, item) {
+  if(user?.perfil==='MASTER')return true;
   const permissions = user?.permissoes;
   if (!Array.isArray(permissions) || permissions.includes('*')) return true;
   if (item.permissions) return item.permissions.some((permission) => permissions.includes(permission));
@@ -60,6 +61,9 @@ function Painel() {
   const [token, setToken] = useState(undefined);
   const [user, setUser] = useState(readUser);
   useEffect(()=>{let active=true;restaurarSessao().then(t=>{if(active){setUser(readUser());setToken(t);}}).catch(()=>{if(active){limparSessao();setToken(null);setUser({});}});return()=>{active=false;};},[]);
+  const [empresasMaster,setEmpresasMaster]=useState([]);
+  const [empresaContexto,setEmpresaContexto]=useState(()=>sessionStorage.getItem('climasaas_empresa_contexto')||'');
+  useEffect(()=>{if(token&&user.perfil==='MASTER')api.get('/master/empresas').then(r=>setEmpresasMaster(r.data)).catch(()=>setEmpresasMaster([]));},[token,user.perfil]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [online, setOnline] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('climasaas_tema') || 'sistema');
@@ -130,6 +134,7 @@ function Painel() {
         <div className="user-avatar">{String(user.nome || 'U').slice(0, 1).toUpperCase()}</div>
         <div><b>{user.nome || 'Usuário'}</b><small>{user.perfil || 'Equipe'}</small></div>
       </div>
+      {user.perfil==='MASTER'&&<label style={{color:'white',padding:12}}>Empresa em administracao<select aria-label="Empresa em administracao" value={empresaContexto} onChange={e=>{sessionStorage.setItem('climasaas_empresa_contexto',e.target.value);window.location.hash='dashboard';window.location.reload();}}><option value="">Selecione uma empresa</option>{empresasMaster.filter(e=>e.ativo).map(e=><option key={e.id} value={e.id}>{e.nome}</option>)}</select></label>}
       <nav aria-label="Navegação principal">
         {availableMenus.map((item) => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} onClick={() => setMenuOpen(false)}>
           <span aria-hidden="true">{item.icon}</span>{item.label}
@@ -147,7 +152,7 @@ function Painel() {
         <div className="header-actions"><button className="theme-toggle" aria-label="Alternar tema" title="Alternar tema" onClick={() => setTheme((atual) => atual === 'light' ? 'dark' : atual === 'dark' ? 'sistema' : 'light')}>{theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}</button><div className={`header-status ${online ? '' : 'offline'}`} role="status"><span className="status-dot" />{online ? 'Sistema online' : 'Sem conexão'}</div></div>
       </header>
       <Suspense fallback={<div className="loading">Carregando módulo...</div>}>
-        {CurrentPage ? <CurrentPage /> : <div className="empty">Você não possui módulos disponíveis.</div>}
+        {user.perfil==='MASTER'&&!empresaContexto&&!['empresas','conta'].includes(current?.id)?<div className="panel">Selecione uma empresa no menu para acessar este modulo.</div>:CurrentPage ? <CurrentPage /> : <div className="empty">Você não possui módulos disponíveis.</div>}
       </Suspense>
     </main>
   </div>;

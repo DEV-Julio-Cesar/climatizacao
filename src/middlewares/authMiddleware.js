@@ -67,7 +67,22 @@ module.exports = async (req, res, next) => {
     return res.status(500).json({ erro: 'Erro interno ao validar autenticação.' });
   }
 
-  if(decoded.perfil==='MASTER' && !req.path.startsWith('/master/') && !['/conta/senha','/conta/perfil','/conta/logout'].includes(req.path))return res.status(403).json({erro:'Master acessa apenas a administracao da plataforma.'});
+  const caminho=(req.originalUrl||req.path).split('?')[0];
+  if(decoded.perfil==='MASTER') {
+    const plataforma=caminho.startsWith('/master/');
+    const propriaConta=['/conta/senha','/conta/perfil','/conta/logout'].includes(caminho);
+    if(!plataforma && !propriaConta) {
+      const empresa=String(req.headers['x-empresa-id']||'');
+      if(!/^[1-9][0-9]*$/.test(empresa)||!Number.isSafeInteger(Number(empresa)))return res.status(403).json({erro:'Selecione uma empresa para acessar este modulo.'});
+      if(caminho==='/conta/dados')return res.status(403).json({erro:'Direitos pessoais nao podem ser executados em nome de outra pessoa.'});
+      try {
+        const r=await db.query('SELECT id FROM empresas WHERE id=$1 AND id<>$2 AND ativo=TRUE AND deleted_at IS NULL',[Number(empresa),decoded.empresa_id]);
+        if(!r.rows.length)return res.status(404).json({erro:'Empresa ativa nao encontrada.'});
+        await db.query("INSERT INTO seguranca_auditoria(empresa_id,usuario_id,acao) VALUES($1,$2,'MASTER_ACESSO_EMPRESA')",[Number(empresa),decoded.usuario_id]);
+        decoded={...decoded,empresa_origem_id:decoded.empresa_id,empresa_id:Number(empresa),perfil_original:'MASTER',perfil:'ADMIN',permissoes:['*']};
+      }catch{return res.status(503).json({erro:'Nao foi possivel validar o acesso a empresa.'});}
+    }
+  }
   req.usuarioLogado = decoded;
   return next();
 };
