@@ -109,6 +109,24 @@ function normalizarErro(error) {
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const api = {
+  async pdfOrcamento(id) {
+    if(!/^[1-9][0-9]*$/.test(String(id)))throw new Error('Orcamento invalido.');
+    const scope=await obterEscopoOffline(),version=generation;
+    for(let tentativa=0;tentativa<2;tentativa++){
+      await verificarEscopoOffline(scope);
+      const token=await getToken();
+      if(version!==generation)throw new Error('Sessao alterada.');
+      const r=await fetchComTimeout(`${BASE_URL}/orcamentos/${id}/pdf`,{headers:{Authorization:`Bearer ${token}`}});
+      if(r.status===401&&tentativa===0){await renovarSessao();continue;}
+      if(!r.ok)await parse(r);
+      const bytes=new Uint8Array(await r.arrayBuffer());
+      await verificarEscopoOffline(scope);
+      if(version!==generation)throw new Error('Sessao alterada.');
+      if(String.fromCharCode(...bytes.slice(0,5))!=='%PDF-')throw new Error('PDF invalido.');
+      return bytes;
+    }
+    throw new Error('Entre novamente para gerar o PDF.');
+  },
   async logout() {
     generation++;
     if(_refreshPromise)await _refreshPromise.catch(()=>{});

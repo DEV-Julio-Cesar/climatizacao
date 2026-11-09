@@ -66,3 +66,7 @@ jobs:
         run: npm run test:postgres
         env:
           SECURITY_TEST_DATABASE_URL: postgresql://security_test:disposable_ci_password@127.0.0.1:5432/security_test
+      - name: Validar orcamentos livres no PostgreSQL
+        run: npm run test:orcamentos:postgres
+        env:
+          SECURITY_TEST_DATABASE_URL: postgresql://security_test:disposable_ci_password@127.0.0.1:5432/security_test

@@ -7,16 +7,44 @@ const uploadsDir = path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
 class PdfService {
   async gerarOrcamentoPdf(o) {
     return new Promise((resolve,reject)=>{
-      const doc=new PDFDocument({margin:45,size:'A4'}),chunks=[];doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);
-      const moeda=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
-      doc.fillColor('#087a9b').fontSize(22).text(o.empresa_nome||'ClimaSaaS').fillColor('#111').fontSize(16).text(`Orçamento nº ${o.id}`,{align:'right'}).moveDown();
-      doc.fontSize(10).fillColor('#52606d').text([o.empresa_cnpj,o.empresa_telefone,o.empresa_email].filter(Boolean).join(' · ')).fillColor('#111').moveDown();
-      doc.fontSize(13).text('Cliente',{underline:true}).fontSize(10).text(`Nome: ${o.cliente_nome}`).text(`CPF/CNPJ: ${o.cliente_documento||'-'}`).text(`Telefone: ${o.cliente_telefone||'-'}`).text(`Endereço: ${[o.cliente_endereco,o.cliente_numero,o.cliente_cidade,o.cliente_estado].filter(Boolean).join(', ')||'-'}`).moveDown();
-      doc.fontSize(13).text('Itens do orçamento',{underline:true}).moveDown(.5);o.itens.forEach((i,n)=>doc.fontSize(10).text(`${n+1}. ${i.descricao}`).text(`   ${i.quantidade} x ${moeda(i.valor_unitario)} = ${moeda(Number(i.quantidade)*Number(i.valor_unitario))}`).moveDown(.3));
-      doc.moveDown().fontSize(10).text(`Subtotal: ${moeda(o.subtotal)}`,{align:'right'}).text(`Desconto: ${moeda(o.desconto)}`,{align:'right'}).fontSize(14).text(`Total: ${moeda(o.total)}`,{align:'right'});
-      if(o.validade)doc.moveDown().fontSize(10).text(`Validade: ${new Date(`${String(o.validade).slice(0,10)}T12:00:00`).toLocaleDateString('pt-BR')}`);
-      if(o.observacoes)doc.moveDown().fontSize(11).text('Observações',{underline:true}).fontSize(10).text(o.observacoes);
-      doc.moveDown(2).fontSize(9).fillColor('#52606d').text('Documento gerado pelo ClimaSaaS.',{align:'center'});doc.end();
+      const doc=new PDFDocument({margin:45,size:'A4',bufferPages:true}),chunks=[];
+      doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);
+      const moeda=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+      const largura=doc.page.width-90,limite=doc.page.height-80;
+      const espaco=h=>{if(doc.y+h>limite)doc.addPage();};
+      doc.font('Helvetica-Bold').fillColor('#087a9b').fontSize(20).text(o.empresa_nome_fantasia||o.empresa_nome||'Empresa',45,45,{width:largura});
+      doc.font('Helvetica').fontSize(10).fillColor('#334155');
+      if(o.empresa_nome_fantasia&&o.empresa_nome)doc.text(o.empresa_nome);
+      doc.text([o.empresa_cnpj?`CNPJ: ${o.empresa_cnpj}`:'',o.empresa_telefone,o.empresa_email].filter(Boolean).join(' | '));
+      const endereco=[o.empresa_endereco,o.empresa_cidade,o.empresa_estado,o.empresa_cep].filter(Boolean).join(', ');
+      if(endereco)doc.text(endereco);
+      doc.moveDown().font('Helvetica-Bold').fontSize(17).fillColor('#132a3a').text(`Orcamento n. ${o.id}`);
+      if(o.created_at)doc.font('Helvetica').fontSize(10).text(`Emissao: ${new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(o.created_at))?o.created_at+'T12:00:00':o.created_at).toLocaleDateString('pt-BR')}`);
+      if(o.validade){const data=o.validade instanceof Date?o.validade:new Date(String(o.validade).slice(0,10)+'T12:00:00');doc.font('Helvetica').fontSize(10).text(`Validade: ${data.toLocaleDateString('pt-BR')}`);}
+      doc.moveDown().font('Helvetica-Bold').fontSize(12).text('Destinatario');
+      doc.font('Helvetica').fontSize(10).text(o.cliente_nome||'-');
+      if(o.cliente_telefone)doc.text(`Telefone: ${o.cliente_telefone}`);
+      if(o.cliente_email)doc.text(`E-mail: ${o.cliente_email}`);
+      const destino=[o.cliente_endereco,o.cliente_numero,o.cliente_cidade,o.cliente_estado].filter(Boolean).join(', ');
+      if(destino)doc.text(destino);
+      doc.moveDown();
+      const cabecalho=()=>{espaco(35);const y=doc.y;doc.rect(45,y,largura,25).fill('#edf5f7');doc.fillColor('#132a3a').font('Helvetica-Bold').fontSize(9);doc.text('Descricao',52,y+8,{width:250});doc.text('Qtd.',310,y+8,{width:45,align:'right'});doc.text('Unitario',365,y+8,{width:80,align:'right'});doc.text('Total',455,y+8,{width:85,align:'right'});doc.y=y+33;};
+      cabecalho();
+      for(const [n,i]of o.itens.entries()){
+        const descricao=`${n+1}. ${i.descricao}`;doc.font('Helvetica').fontSize(10);
+        const h=Math.max(28,doc.heightOfString(descricao,{width:245})+14);
+        if(doc.y+h>limite){doc.addPage();cabecalho();}
+        doc.font('Helvetica');
+        const y=doc.y;
+        doc.fillColor('#132a3a').text(descricao,52,y,{width:245});
+        doc.fontSize(9).text(Number(i.quantidade).toLocaleString('pt-BR'),310,y,{width:45,align:'right'}).text(moeda(i.valor_unitario),365,y,{width:80,align:'right'}).text(moeda(Math.round(Number(i.quantidade)*Number(i.valor_unitario)*100)/100),455,y,{width:85,align:'right'});
+        doc.moveTo(45,y+h-5).lineTo(45+largura,y+h-5).strokeColor('#dce7ec').stroke();doc.y=y+h;
+      }
+      espaco(100);doc.y+=12;doc.font('Helvetica').fontSize(11).text(`Subtotal: ${moeda(o.subtotal)}`,45,doc.y,{width:largura,align:'right'}).text(`Desconto: ${moeda(o.desconto)}`,{width:largura,align:'right'}).font('Helvetica-Bold').fontSize(15).fillColor('#087a9b').text(`Total: ${moeda(o.total)}`,{width:largura,align:'right'});
+      if(o.observacoes){doc.font('Helvetica').fontSize(10);const h=doc.heightOfString(o.observacoes,{width:largura});espaco(Math.min(h+40,150));doc.moveDown().font('Helvetica-Bold').fillColor('#132a3a').fontSize(11).text('Observacoes');doc.font('Helvetica').fontSize(10).text(o.observacoes,{width:largura});}
+      const pages=doc.bufferedPageRange();
+      for(let n=0;n<pages.count;n++){doc.switchToPage(pages.start+n);const bottom=doc.page.margins.bottom;doc.page.margins.bottom=0;doc.font('Helvetica').fontSize(8).fillColor('#64748b').text(`Orcamento ${o.id} | Pagina ${n+1} de ${pages.count}`,45,doc.page.height-35,{width:largura,align:'center',lineBreak:false});doc.page.margins.bottom=bottom;}
+      doc.end();
     });
   }
   async gerarOsPdf(os, fotos) {

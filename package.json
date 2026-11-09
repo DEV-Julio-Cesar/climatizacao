@@ -17,7 +17,8 @@
     "test:postgres": "node scripts/verificar-seguranca-postgres.js",
     "security:config": "node -r dotenv/config -e \"require('./src/config/security').validarConfiguracao()\"",
     "database:where": "node scripts/verificar-provedor-banco.js",
-    "master:create": "node scripts/create-master.js"
+    "master:create": "node scripts/create-master.js",
+    "test:orcamentos:postgres": "node scripts/verificar-orcamento-postgres.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
