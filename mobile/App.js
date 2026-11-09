@@ -7,6 +7,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './src/styles/useTheme';
 import LoginScreen from './src/screens/Login/LoginScreen';
 import AgendaMapa from './src/screens/Agenda/AgendaMapa';
@@ -48,11 +49,14 @@ const tabIcons = { AgendaTab: 'calendar-outline', ClientesTab: 'people-outline',
 
 function AbasPrincipais({ onLogout, usuario }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const espacoInferior = Math.max(insets.bottom, 8);
   const pode = (permissao) => usuario?.permissoes?.includes('*') || usuario?.permissoes?.includes(permissao) || !Array.isArray(usuario?.permissoes);
   return <Tab.Navigator screenOptions={({ route }) => ({
     headerStyle: { backgroundColor: colors.navy }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: '800' },
     tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted,
-    tabBarStyle: { height: 64, paddingTop: 6, paddingBottom: 8 },
+    tabBarStyle: { height: 56 + espacoInferior, paddingTop: 6, paddingBottom: espacoInferior, backgroundColor: colors.surface, borderTopColor: colors.border },
+    tabBarHideOnKeyboard: true,
     tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
     tabBarIcon: ({ color, size }) => <Ionicons name={tabIcons[route.name]} size={size} color={color} />,
   })}>
@@ -65,6 +69,7 @@ function AbasPrincipais({ onLogout, usuario }) {
 
 function AppContent() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const navigationTheme = {
     ...(isDark ? DarkTheme : DefaultTheme),
     colors: { ...(isDark ? DarkTheme.colors : DefaultTheme.colors), primary:colors.primary, background:colors.background, card:colors.surface, text:colors.text, border:colors.border, notification:colors.danger },
@@ -88,13 +93,13 @@ function AppContent() {
   return (
     <ErrorBoundary><View style={{ flex:1, backgroundColor:colors.background }}><NavigationContainer theme={navigationTheme}>
       <StatusBar style={isDark ? "light" : "dark"} />
-      <Stack.Navigator screenOptions={{
+      <Stack.Navigator screenOptions={({ route }) => ({
         headerTintColor: colors.surface,
         headerStyle: { backgroundColor: colors.navy },
         headerTitleStyle: { fontWeight: '700' },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.background },
-      }}>
+        contentStyle: { backgroundColor: colors.background, paddingBottom: route.name === 'Inicio' ? 0 : insets.bottom },
+      })}>
         {!token ? (
           <Stack.Screen name="Login" options={{ headerShown: false }}>
             {(props) => <LoginScreen {...props} onLogin={(novoToken, novoUsuario) => { setUsuario(novoUsuario); setToken(novoToken); }} />}
@@ -140,10 +145,10 @@ function AppContent() {
           </>
         )}
       </Stack.Navigator>
-    </NavigationContainer>{!online && <View accessibilityRole="alert" style={{ position:'absolute',left:0,right:0,bottom:0,backgroundColor:colors.warning,padding:7 }}><Text style={{ color:colors.navy,fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View></ErrorBoundary>
+    </NavigationContainer>{!online && <View accessibilityRole="alert" style={{ backgroundColor:colors.warning,paddingTop:7,paddingHorizontal:12,paddingBottom:Math.max(insets.bottom,7) }}><Text style={{ color:colors.navy,fontWeight:'800',textAlign:'center',fontSize:12 }}>Sem internet · alterações serão sincronizadas quando possível</Text></View>}</View></ErrorBoundary>
   );
 }
 
 export default function App() {
-  return <AppProvider><AppContent /></AppProvider>;
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><AppProvider><AppContent /></AppProvider></SafeAreaProvider>;
 }
