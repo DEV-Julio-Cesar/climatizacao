@@ -10,18 +10,12 @@
     "userInterfaceStyle": "light",
     "scheme": "climasaas",
     "icon": "./assets/climasaas-icon.png",
-    "splash": {
-      "image": "./assets/climasaas-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B1F33"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.climasaas.mobile"
     },
     "android": {
       "package": "com.climasaas.mobile",
-      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/climasaas-icon.png",
         "backgroundColor": "#0B1F33"
@@ -55,6 +49,14 @@
         "expo-notifications",
         {
           "defaultChannel": "atendimentos"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/climasaas-icon.png",
+          "backgroundColor": "#0B1F33",
+          "imageWidth": 200
         }
       ]
     ],
