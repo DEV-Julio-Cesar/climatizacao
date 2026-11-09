@@ -1,3 +1,6 @@
+import DateField from '../../components/DateField';
+import FormScrollView from '../../components/FormScrollView';
+const { agendamento } = require('../../services/Datas.cjs');
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +20,7 @@ const MEDICOES = [['temperatura_retorno','Temp. retorno','°C'],['temperatura_in
 export default function ExecucaoOS({ route, navigation }) {
   const { os_id } = route.params; const [os, setOs] = useState(null); const [loading, setLoading] = useState(false);
   const [diagnostico, setDiagnostico] = useState(''); const [solucao, setSolucao] = useState(''); const [recomendacoes, setRecomendacoes] = useState('');
-  const [garantia, setGarantia] = useState('0'); const [retorno, setRetorno] = useState(false); const [retornoData,setRetornoData]=useState(''); const [retornoMotivo,setRetornoMotivo]=useState(''); const [medicoes, setMedicoes] = useState({}); const [respostas, setRespostas] = useState({}); const [observacoes,setObservacoes]=useState({});
+  const [garantia, setGarantia] = useState('0'); const [retorno, setRetorno] = useState(false); const [retornoData,setRetornoData]=useState(''); const [retornoHora,setRetornoHora]=useState(''); const [retornoMotivo,setRetornoMotivo]=useState(''); const [medicoes, setMedicoes] = useState({}); const [respostas, setRespostas] = useState({}); const [observacoes,setObservacoes]=useState({});
   const [itens, setItens] = useState([]);
   const [catalogo, setCatalogo] = useState({ servicos: [], produtos: [] });
   useEffect(() => { (async()=>{try{let data,cat;try{[data,cat]=await Promise.all([api.chamadaAutenticada(`/os/${os_id}`),api.chamadaAutenticada('/catalogo')]);await Promise.all([salvarCache(`os_${os_id}`,data),salvarCache('catalogo',cat)]);}catch(e){const[osCache,catCache]=await Promise.all([lerCache(`os_${os_id}`),lerCache('catalogo')]);if(!osCache)throw e;data=osCache.dados;cat=catCache?.dados||{servicos:[],produtos:[]};}setOs(data);setCatalogo(cat);setDiagnostico(data.diagnostico||'');setSolucao(data.solucao_aplicada||'');setRecomendacoes(data.recomendacoes||'');setGarantia(String(data.garantia_dias||0));setRetorno(Boolean(data.retorno_necessario));setMedicoes(data.medicoes||{});setRespostas(Object.fromEntries((data.checklist||[]).map(item=>[item.item,item.conforme])));setObservacoes(Object.fromEntries((data.checklist||[]).map(item=>[item.item,item.observacao||''])));setItens((data.itens||[]).map(item=>({...item,quantidade:String(item.quantidade),valor_unitario:String(item.valor_unitario)})));}catch(e){Alert.alert('Relatório',e.message)}})(); }, [os_id]);
@@ -28,7 +31,7 @@ export default function ExecucaoOS({ route, navigation }) {
   const usarCatalogo = (item, tipo) => setItens([...itens, { tipo, referencia_id: item.id, descricao: item.nome, quantidade: '1', valor_unitario: String(item.preco), estoque_disponivel: tipo === 'PECA' ? Number(item.estoque) : undefined }]);
   const salvar = async () => {
     if (diagnostico.trim().length < 5 || solucao.trim().length < 5) return Alert.alert('Relatório incompleto', 'Informe diagnóstico e solução aplicada.');
-    if(retorno&&(!retornoData.trim()||Number.isNaN(Date.parse(retornoData.trim()))))return Alert.alert('Visita de retorno','Informe uma data e hora válidas para o retorno.');
+    if(retorno&&!agendamento(retornoData,retornoHora))return Alert.alert('Visita de retorno','Informe uma data e hora válidas para o retorno.');
     if (checklist.some((item) => respostas[item] === undefined)) return Alert.alert('Checklist incompleto', 'Marque todos os itens como conforme ou não conforme.');
     const semJustificativa=checklist.find(item=>respostas[item]===false&&!observacoes[item]?.trim());if(semJustificativa)return Alert.alert('Não conformidade',`Descreva o problema em: ${semJustificativa}.`);
     if (itens.some((item) => item.descricao.trim().length < 2)) return Alert.alert('Itens', 'Preencha a descrição de todos os itens.');
@@ -38,12 +41,12 @@ export default function ExecucaoOS({ route, navigation }) {
     setLoading(true);
     try {
       await api.chamadaAutenticada(`/os/${os_id}/execucao`, 'PATCH', payload);
-      if(retorno&&retornoData.trim())await api.chamadaAutenticada(`/os/${os_id}/retorno`,'POST',{agendado_para:new Date(retornoData.trim()).toISOString(),motivo:retornoMotivo.trim()||'Retorno técnico'});
+      if(retorno&&retornoData.trim())await api.chamadaAutenticada(`/os/${os_id}/retorno`,'POST',{agendado_para:agendamento(retornoData,retornoHora),motivo:retornoMotivo.trim()||'Retorno técnico'});
       navigation.replace('AssinaturaOS', { os_id });
-    } catch (e) { if(!e.status){await enfileirar('EXECUCAO_OS',{os_id,dados:payload});if(retorno&&retornoData.trim())await enfileirar('RETORNO_OS',{os_id,dados:{agendado_para:new Date(retornoData.trim()).toISOString(),motivo:retornoMotivo.trim()||'Retorno técnico'}});Alert.alert('Relatório salvo offline','Ele será sincronizado automaticamente.');navigation.replace('AssinaturaOS',{os_id});}else Alert.alert('Não foi possível salvar',e.message); } finally { setLoading(false); }
+    } catch (e) { if(!e.status){await enfileirar('EXECUCAO_OS',{os_id,dados:payload});if(retorno&&retornoData.trim())await enfileirar('RETORNO_OS',{os_id,dados:{agendado_para:agendamento(retornoData,retornoHora),motivo:retornoMotivo.trim()||'Retorno técnico'}});Alert.alert('Relatório salvo offline','Ele será sincronizado automaticamente.');navigation.replace('AssinaturaOS',{os_id});}else Alert.alert('Não foi possível salvar',e.message); } finally { setLoading(false); }
   };
   if (!os) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
-  return <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  return <FormScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Header number="1" title="Relatório técnico" icon="document-text-outline" />
     <Field label="Diagnóstico" value={diagnostico} onChangeText={setDiagnostico} placeholder="O que causou o problema?" />
     <Field label="Solução aplicada" value={solucao} onChangeText={setSolucao} placeholder="O que foi feito para resolver?" />
@@ -58,9 +61,9 @@ export default function ExecucaoOS({ route, navigation }) {
     {itens.map((item, i) => <View key={i} style={styles.itemCard}><View style={styles.typeRow}><TouchableOpacity style={[styles.type, item.tipo === 'SERVICO' && styles.typeActive]} onPress={() => mudarItem(i,'tipo','SERVICO')}><Text style={[styles.typeText,item.tipo === 'SERVICO' && styles.activeText]}>Serviço</Text></TouchableOpacity><TouchableOpacity style={[styles.type, item.tipo === 'PECA' && styles.typeActive]} onPress={() => mudarItem(i,'tipo','PECA')}><Text style={[styles.typeText,item.tipo === 'PECA' && styles.activeText]}>Peça</Text></TouchableOpacity><TouchableOpacity onPress={() => setItens(itens.filter((_,idx) => idx !== i))}><Ionicons name="trash-outline" size={20} color={colors.danger} /></TouchableOpacity></View><TextInput style={styles.simpleInput} value={item.descricao} onChangeText={(v) => mudarItem(i,'descricao',v)} placeholder="Descrição" /><View style={styles.inline}><TextInput style={[styles.simpleInput,{flex:1}]} value={item.quantidade} onChangeText={(v) => mudarItem(i,'quantidade',v)} keyboardType="decimal-pad" placeholder="Qtd." /><TextInput style={[styles.simpleInput,{flex:1}]} value={item.valor_unitario} onChangeText={(v) => mudarItem(i,'valor_unitario',v)} keyboardType="decimal-pad" placeholder="Valor R$" /></View></View>)}
     <TouchableOpacity style={styles.add} onPress={adicionarItem}><Ionicons name="add-circle-outline" size={20} color={colors.primary} /><Text style={styles.addText}>Adicionar serviço ou peça</Text></TouchableOpacity>
     <Header number="5" title="Garantia e retorno" icon="shield-checkmark-outline" />
-    <View style={styles.card}><Text style={styles.smallLabel}>Garantia do serviço (dias)</Text><TextInput style={styles.simpleInput} value={garantia} onChangeText={setGarantia} keyboardType="number-pad" /><View style={styles.switchRow}><View><Text style={styles.switchTitle}>Necessita retorno?</Text><Text style={styles.switchText}>Cria uma nova visita ligada a esta O.S.</Text></View><Switch value={retorno} onValueChange={setRetorno} trackColor={{ true: colors.primary }} /></View>{retorno&&<><TextInput style={[styles.simpleInput,{marginTop:12}]} value={retornoData} onChangeText={setRetornoData} placeholder="Data e hora: 2026-10-10 09:00"/><TextInput style={[styles.simpleInput,{marginTop:8}]} value={retornoMotivo} onChangeText={setRetornoMotivo} placeholder="Motivo: aguardando peça, aprovação..."/></>}</View>
+    <View style={styles.card}><Text style={styles.smallLabel}>Garantia do serviço (dias)</Text><TextInput style={styles.simpleInput} value={garantia} onChangeText={setGarantia} keyboardType="number-pad" /><View style={styles.switchRow}><View><Text style={styles.switchTitle}>Necessita retorno?</Text><Text style={styles.switchText}>Cria uma nova visita ligada a esta O.S.</Text></View><Switch value={retorno} onValueChange={setRetorno} trackColor={{ true: colors.primary }} /></View>{retorno&&<><DateField label="Data do retorno" value={retornoData} onChange={setRetornoData}/><DateField label="Horário do retorno" mode="time" value={retornoHora} onChange={setRetornoHora}/><TextInput style={[styles.simpleInput,{marginTop:8}]} value={retornoMotivo} onChangeText={setRetornoMotivo} placeholder="Motivo: aguardando peça, aprovação..."/></>}</View>
     <TouchableOpacity style={styles.finish} onPress={salvar} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.finishText}>Salvar relatório e assinar</Text><Ionicons name="arrow-forward" size={20} color="#fff" /></>}</TouchableOpacity>
-  </ScrollView>;
+  </FormScrollView>;
 }
 function Header({ number,title,icon }) { return <View style={styles.header}><View style={styles.number}><Text style={styles.numberText}>{number}</Text></View><Ionicons name={icon} size={21} color={colors.primary} /><Text style={styles.headerTitle}>{title}</Text></View>; }
 function Field(props) { return <View style={styles.card}><Text style={styles.smallLabel}>{props.label}</Text><TextInput {...props} style={styles.textArea} multiline placeholderTextColor="#94A3AD" /></View>; }

@@ -1,3 +1,6 @@
+import DateField from '../../components/DateField';
+import FormScrollView from '../../components/FormScrollView';
+const { agendamento } = require('../../services/Datas.cjs');
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import * as Network from 'expo-network';
@@ -14,9 +17,10 @@ export default function Checklist({ navigation }) {
   useEffect(() => { api.chamadaAutenticada('/clientes').then(setClientes).catch((e) => Alert.alert('Clientes', e.message)); }, []);
   const selecionarCliente = (item) => { setCliente(item); setAparelho(item.aparelhos?.[0] || null); };
   const salvar = async () => {
+    if (loading) return;
     if (!cliente || !tipo || descricao.trim().length < 5) return Alert.alert('Atenção', 'Selecione cliente, serviço e descreva o atendimento.');
     let agendado_para=null;
-    if(dataVisita||horaVisita){if(!/^\d{4}-\d{2}-\d{2}$/.test(dataVisita)||!/^\d{2}:\d{2}$/.test(horaVisita)||Number.isNaN(Date.parse(`${dataVisita}T${horaVisita}:00`)))return Alert.alert('Agendamento','Informe data no formato AAAA-MM-DD e hora no formato HH:MM.');agendado_para=new Date(`${dataVisita}T${horaVisita}:00`).toISOString();}
+    if(dataVisita||horaVisita){agendado_para=agendamento(dataVisita,horaVisita);if(!agendado_para)return Alert.alert('Agendamento','Selecione a data e o horário da visita.');}
     const payload = { cliente_id: cliente.id, aparelho_id: aparelho?.id || null, tipo_servico: tipo, descricao_problema: descricao.trim(), agendado_para };
     setLoading(true);
     try {
@@ -29,15 +33,15 @@ export default function Checklist({ navigation }) {
     } catch (error) { Alert.alert('Falha ao salvar', error.message); }
     finally { setLoading(false); }
   };
-  return <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+  return <FormScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
     <View style={styles.intro}><Text style={styles.introTitle}>Novo atendimento</Text><Text style={styles.introText}>Preencha os dados abaixo para iniciar uma ordem de serviço.</Text></View>
     <Section number="1" icon="person-outline" title="Escolha o cliente"><View style={styles.chips}>{clientes.map((item) => <TouchableOpacity key={item.id} style={[styles.chip, cliente?.id === item.id && styles.active]} onPress={() => selecionarCliente(item)}><Ionicons name={cliente?.id === item.id ? 'checkmark-circle' : 'person-circle-outline'} size={18} color={cliente?.id === item.id ? '#fff' : colors.muted} /><Text style={[styles.chipText, cliente?.id === item.id && styles.activeText]}>{item.nome}</Text></TouchableOpacity>)}</View></Section>
     {cliente?.aparelhos?.length > 0 && <Section number="2" icon="snow-outline" title="Equipamento"><View style={styles.chips}>{cliente.aparelhos.map((item) => <TouchableOpacity key={item.id} style={[styles.chip, aparelho?.id === item.id && styles.active]} onPress={() => setAparelho(item)}><Text style={[styles.chipText, aparelho?.id === item.id && styles.activeText]}>{item.marca} {item.modelo}</Text></TouchableOpacity>)}</View></Section>}
     <Section number="3" icon="construct-outline" title="Tipo de serviço"><View style={styles.chips}>{TIPOS.map((item) => <TouchableOpacity key={item} style={[styles.serviceChip, tipo === item && styles.active]} onPress={() => setTipo(item)}><Text style={[styles.chipText, tipo === item && styles.activeText]}>{item.replaceAll('_', ' ')}</Text></TouchableOpacity>)}</View></Section>
-    <Section number="4" icon="document-text-outline" title="Descrição e diagnóstico"><TextInput style={styles.input} multiline value={descricao} onChangeText={setDescricao} placeholder="Conte o que foi identificado ou precisa ser realizado..." placeholderTextColor="#9AAAB3" /><Text style={styles.counter}>{descricao.length}/1000</Text></Section>
-    <Section number="5" icon="calendar-outline" title="Agendar visita"><Text style={styles.scheduleHelp}>Opcional. Preencha os dois campos para incluir na agenda.</Text><View style={styles.scheduleRow}><TextInput style={[styles.scheduleInput,{flex:1.35}]} value={dataVisita} onChangeText={setDataVisita} placeholder="AAAA-MM-DD" keyboardType="numbers-and-punctuation"/><TextInput style={styles.scheduleInput} value={horaVisita} onChangeText={setHoraVisita} placeholder="HH:MM" keyboardType="numbers-and-punctuation"/></View></Section>
+    <Section number="4" icon="document-text-outline" title="Descrição e diagnóstico"><TextInput style={styles.input} multiline maxLength={1000} value={descricao} onChangeText={setDescricao} placeholder="Conte o que foi identificado ou precisa ser realizado..." placeholderTextColor="#9AAAB3" /><Text style={styles.counter}>{descricao.length}/1000</Text></Section>
+    <Section number="5" icon="calendar-outline" title="Agendar visita"><Text style={styles.scheduleHelp}>Opcional. Preencha os dois campos para incluir na agenda.</Text><View style={styles.scheduleRow}><DateField style={{flex:1.3}} label="Data da visita" value={dataVisita} onChange={setDataVisita}/><DateField style={{flex:1}} label="Horário" mode="time" value={horaVisita} onChange={setHoraVisita}/></View></Section>
     <TouchableOpacity style={styles.button} onPress={salvar} disabled={loading} activeOpacity={0.85}>{loading ? <ActivityIndicator color="#fff" /> : <><Ionicons name="checkmark-circle-outline" size={21} color="#fff" /><Text style={styles.buttonText}>Criar ordem de serviço</Text></>}</TouchableOpacity>
-  </ScrollView>;
+  </FormScrollView>;
 }
 function Section({ number, icon, title, children }) { return <View style={styles.section}><View style={styles.sectionHeader}><View style={styles.number}><Text style={styles.numberText}>{number}</Text></View><Ionicons name={icon} size={20} color={colors.primary} /><Text style={styles.sectionTitle}>{title}</Text></View>{children}</View>; }
 const styles = StyleSheet.create({

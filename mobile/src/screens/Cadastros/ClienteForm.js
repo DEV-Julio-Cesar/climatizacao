@@ -1,3 +1,4 @@
+import FormScrollView from '../../components/FormScrollView';
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, View } from 'react-native';
 import * as Location from 'expo-location';
@@ -44,7 +45,7 @@ export default function ClienteForm({ route, navigation }) {
     if(ocupado)return;if(dados.nome.trim().length<2)return Alert.alert('Cliente','Informe o nome.');setLoading(true);
     try{await api.chamadaAutenticada(cliente?`/clientes/${cliente.id}`:'/clientes',cliente?'PATCH':'POST',dados);navigation.goBack();}catch(e){if(ativo.current)Alert.alert('Cliente',e.message);}finally{if(ativo.current)setLoading(false);}
   };
-  return <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  return <FormScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.title}>{cliente?'Editar cliente':'Novo cliente'}</Text><Text style={styles.subtitle}>Estando no imóvel do cliente, use o GPS para sugerir o endereço. Revise os dados antes de salvar.</Text>
     <TouchableOpacity accessibilityLabel="Usar minha localização atual para preencher o endereço" style={styles.gps} onPress={usarGps} disabled={ocupado}>{localizando==='gps'?<ActivityIndicator color="#fff"/>:<><Ionicons name="locate-outline" size={22} color="#fff"/><Text style={styles.gpsText}>Usar minha localização atual</Text></>}</TouchableOpacity>
     <Text style={styles.hint}>Usa o GPS e o serviço de endereços do celular. Não é necessário abrir o Google Maps.</Text>
@@ -54,7 +55,7 @@ export default function ClienteForm({ route, navigation }) {
     {!!aviso&&<Text accessibilityLiveRegion="polite" style={styles.notice}>{aviso}</Text>}
     {dados.latitude!==null&&dados.longitude!==null&&<View style={styles.confirmed}><Ionicons name="checkmark-circle" size={20} color={colors.success}/><View><Text style={styles.confirmedTitle}>Posição registrada</Text><Text style={styles.coords}>{Number(dados.latitude).toFixed(6)}, {Number(dados.longitude).toFixed(6)}</Text></View></View>}
     <TouchableOpacity style={styles.button} onPress={salvar} disabled={ocupado}>{loading?<ActivityIndicator color="#fff"/>:<Text style={styles.buttonText}>Salvar cliente</Text>}</TouchableOpacity>
-  </ScrollView>;
+  </FormScrollView>;
 }
 function Input({label,...props}){return <><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} placeholderTextColor="#94A3AD" {...props}/></>;}
 const styles=StyleSheet.create({container:{flex:1,backgroundColor:colors.background},content:{padding:18,paddingBottom:35},title:{fontSize:25,fontWeight:'900',color:colors.text},subtitle:{color:colors.muted,marginTop:4,marginBottom:16,lineHeight:20},gps:{backgroundColor:colors.primary,minHeight:52,borderRadius:13,flexDirection:'row',gap:8,alignItems:'center',justifyContent:'center',padding:12},gpsText:{color:'#fff',fontWeight:'800'},hint:{color:colors.muted,fontSize:12,marginTop:8,marginBottom:18},notice:{color:colors.text,fontSize:13,lineHeight:20,marginTop:12},label:{color:colors.text,fontWeight:'800',fontSize:12,marginBottom:6},input:{backgroundColor:'#fff',borderWidth:1,borderColor:colors.border,borderRadius:13,padding:14,marginBottom:13,color:colors.text,...shadow},locate:{minHeight:50,borderWidth:1,borderColor:colors.primary,borderRadius:13,flexDirection:'row',gap:8,alignItems:'center',justifyContent:'center',padding:10},locateText:{color:colors.primary,fontWeight:'800'},confirmed:{backgroundColor:'#E8F7F1',borderRadius:13,padding:12,marginTop:10,flexDirection:'row',alignItems:'center',gap:9},confirmedTitle:{color:colors.success,fontWeight:'800'},coords:{color:colors.muted,fontSize:11,marginTop:2},button:{backgroundColor:colors.success,minHeight:56,borderRadius:15,alignItems:'center',justifyContent:'center',marginTop:16},buttonText:{color:'#fff',fontWeight:'900'}});

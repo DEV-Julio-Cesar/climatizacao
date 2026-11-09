@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.climasaas.mobile",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/climasaas-icon.png",
         "backgroundColor": "#0B1F33"
