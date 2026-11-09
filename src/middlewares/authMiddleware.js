@@ -57,7 +57,7 @@ module.exports = async (req, res, next) => {
     }
     if (usuario.perfil) {
       const permissoes = new Set(padroes[usuario.perfil] || []);
-      for (const override of (usuario.overrides || []).filter(p => p.permissao !== '*'))
+      for (const override of (usuario.overrides || []).filter(p => p.permissao !== '*' && p.permissao !== 'PLATAFORMA_GERENCIAR'))
         override.permitido ? permissoes.add(override.permissao) : permissoes.delete(override.permissao);
       decoded = { ...decoded, perfil: usuario.perfil, nome: usuario.nome, permissoes: [...permissoes] };
     }
@@ -67,6 +67,7 @@ module.exports = async (req, res, next) => {
     return res.status(500).json({ erro: 'Erro interno ao validar autenticação.' });
   }
 
+  if(decoded.perfil==='MASTER' && !req.path.startsWith('/master/') && !['/conta/senha','/conta/perfil','/conta/logout'].includes(req.path))return res.status(403).json({erro:'Master acessa apenas a administracao da plataforma.'});
   req.usuarioLogado = decoded;
   return next();
 };

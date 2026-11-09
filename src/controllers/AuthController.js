@@ -103,7 +103,7 @@ class AuthController {
         [usuario.id],
       );
       const base = new Set(padroes[usuario.perfil] || []);
-      for (const item of overrides.rows.filter(p => p.permissao !== '*'))
+      for (const item of overrides.rows.filter(p => p.permissao !== '*' && p.permissao !== 'PLATAFORMA_GERENCIAR'))
         item.permitido ? base.add(item.permissao) : base.delete(item.permissao);
       const permissoes = [...base];
 
@@ -184,7 +184,7 @@ class AuthController {
         [usuario.id],
       );
       const base = new Set(padroes[usuario.perfil] || []);
-      for (const item of overrides.rows.filter(p => p.permissao !== '*'))
+      for (const item of overrides.rows.filter(p => p.permissao !== '*' && p.permissao !== 'PLATAFORMA_GERENCIAR'))
         item.permitido ? base.add(item.permissao) : base.delete(item.permissao);
       const permissoes = [...base];
 

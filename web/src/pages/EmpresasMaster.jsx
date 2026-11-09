@@ -1,0 +1,10 @@
+﻿import React,{useEffect,useState} from 'react';
+import {api} from '../services/api';
+const pessoa=()=>({nome:'',email:'',senha:''});
+export default function EmpresasMaster(){
+ const [empresas,setEmpresas]=useState([]),[form,setForm]=useState({nome:'',cnpj:'',administrador:pessoa(),tecnico:pessoa()}),[msg,setMsg]=useState(''),[busy,setBusy]=useState(false);
+ const load=()=>api.get('/master/empresas').then(r=>setEmpresas(r.data)).catch(()=>setMsg('Falha ao carregar empresas.'));
+ useEffect(()=>{load();},[]);
+ const salvar=async e=>{e.preventDefault();setBusy(true);setMsg('');try{await api.post('/master/empresas',form);setForm({nome:'',cnpj:'',administrador:pessoa(),tecnico:pessoa()});setMsg('Empresa, administrador e tecnico criados.');await load();}catch(e){setMsg(e.response?.data?.erro||'Falha ao cadastrar.');}finally{setBusy(false);}};
+ return <section className="panel"><h2>Administracao da plataforma</h2><p>Cadastre uma empresa com seu administrador e primeiro tecnico. Cada empresa possui acessos separados.</p>{msg&&<p role="status">{msg}</p>}<form onSubmit={salvar}><label>Empresa<input required value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label><label>CNPJ<input required maxLength={18} value={form.cnpj} onChange={e=>setForm({...form,cnpj:e.target.value})}/></label>{['administrador','tecnico'].map(role=><fieldset key={role}><legend>{role==='administrador'?'Administrador da empresa':'Primeiro tecnico'}</legend>{['nome','email','senha'].map(k=><label key={k}>{k}<input required type={k==='senha'?'password':k==='email'?'email':'text'} minLength={k==='senha'?12:undefined} autoComplete={k==='senha'?'new-password':'off'} value={form[role][k]} onChange={e=>setForm({...form,[role]:{...form[role],[k]:e.target.value}})}/></label>)}<small>Senha com pelo menos 12 caracteres, letras e numeros.</small></fieldset>)}<button className="primary" disabled={busy}>{busy?'Criando...':'Criar empresa e acessos'}</button></form><h3>Empresas cadastradas</h3>{empresas.map(e=><p key={e.id}>{e.nome} — {e.cnpj}</p>)}</section>;
+}

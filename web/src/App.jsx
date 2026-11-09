@@ -3,6 +3,7 @@ import Login from './pages/Login';
 import RecuperarSenha from './pages/RecuperarSenha';
 import { api, encerrarSessao, limparSessao, getAccessToken, setAccessToken, restaurarSessao } from './services/api';
 
+const EmpresasMaster=lazy(()=>import('./pages/EmpresasMaster'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PainelDespacho = lazy(() => import('./pages/PainelDespacho'));
 const MapaEquipe = lazy(() => import('./pages/MapaEquipe'));
@@ -17,6 +18,7 @@ const WhatsApp = lazy(() => import('./pages/WhatsApp'));
 const MinhaConta = lazy(() => import('./pages/MinhaConta'));
 
 const menus = [
+  {id:'empresas',label:'Empresas',icon:'+',permission:'PLATAFORMA_GERENCIAR',component:EmpresasMaster},
   { id: 'dashboard', label: 'Visão geral', icon: '▦', permission: 'GESTAO_VISUALIZAR', component: Dashboard },
   { id: 'despacho', label: 'Agendamentos', icon: '▣', permission: 'AGENDA_VISUALIZAR', component: PainelDespacho },
   { id: 'mapa', label: 'Mapa da equipe', icon: '⌖', permission: 'GESTAO_VISUALIZAR', component: MapaEquipe },

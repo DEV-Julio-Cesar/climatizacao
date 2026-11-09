@@ -16,7 +16,8 @@
     "security:preflight": "node scripts/verificar-prontidao.js",
     "test:postgres": "node scripts/verificar-seguranca-postgres.js",
     "security:config": "node -r dotenv/config -e \"require('./src/config/security').validarConfiguracao()\"",
-    "database:where": "node scripts/verificar-provedor-banco.js"
+    "database:where": "node scripts/verificar-provedor-banco.js",
+    "master:create": "node scripts/create-master.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

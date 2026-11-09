@@ -152,6 +152,7 @@ function createApp() {
   app.use(cadastroRoutes);
   app.use(financeiroRoutes);
   app.use(suprimentosRoutes);
+  app.use(require('./routes/master.routes'));
   app.use(require('./routes/conta.routes'));
   app.use(gestaoRoutes);
   app.use((_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
