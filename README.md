@@ -1,10 +1,23 @@
 # ClimaSaaS
 
-Última entrega: [recuperação de senha com Gmail e atualizações em tempo real](docs/15-recuperacao-senha-tempo-real.md).
+WhatsApp web: [recepção por serviço, configuração, simulador e passagem humana](docs/22-whatsapp-recepcao.md). Requer patch 013 antes de iniciar a API atualizada; homologação externa na Meta pendente.
+
+Homologação de interface: [11 cenários de navegador e ambiente de componentes mobile](docs/21-homologacao-interface.md). Execute `npm run test:e2e` somente com `TEST_DATABASE_URL` em banco dedicado de testes.
+
+Melhorias web/mobile: [solicitações de privacidade no aplicativo, filtros/histórico no painel e proteção de reenvios](docs/20-privacidade-web-mobile.md). Aplicar migrações da API antes de publicar os clientes atualizados.
+
+Mobile 1.1.0: [proteção AES-GCM da fila/cache/evidências e homologação PostgreSQL](docs/19-homologacao-protecao-offline.md). Requer validar novo APK em aparelho antes de publicar.
+
+Proteção de dados: [fluxos de privacidade, matriz de retenção e operação LGPD](docs/18-lgpd-protecao-dados.md). Aplique `npm run migrate` antes de publicar os novos protocolos de privacidade.
+
+Documentação atualizada: [revisão do código e pendências de 09/11/2026](docs/17-revisao-documentacao-2026-11-09.md).
+Estoque mobile: [entrada, saída, ajuste e histórico](docs/16-estoque-mobile.md).
+
+Entrega anterior: [recuperação de senha com Gmail e atualizações em tempo real](docs/15-recuperacao-senha-tempo-real.md).
 
 Mobile atualizado: [assinatura, galeria e tema](docs/14-mobile-assinatura-galeria-tema.md).
 
-Última entrega: [implementação das pendências e implantação](docs/13-implementacao-pendencias.md). Aplique `npm run migrate` antes de iniciar a API atualizada.
+Entrega anterior: [implementação das pendências e implantação](docs/13-implementacao-pendencias.md). Aplique `npm run migrate` antes de iniciar a API atualizada.
 
 Aplicativo mobile para digitalizar o atendimento de empresas de climatização. O técnico recebe sua agenda, consulta cliente e equipamento, registra checklist e fotos, executa o serviço, coleta assinatura e finaliza a ordem de serviço. A gestão acompanha clientes, equipe, estoque, orçamentos e recebimentos.
 
@@ -44,6 +57,7 @@ mobile/                 aplicativo Expo/React Native
   src/database/         SQLite e fila offline
   src/screens/          telas por domínio
   src/services/         API e sincronização
+web/                    painel React/Vite
 src/                    API Express
   controllers/          regras de negócio
   routes/               endpoints REST
@@ -56,7 +70,7 @@ test/                   testes automatizados da API
 
 Para validar alterações durante o desenvolvimento, use `npm run validate`. O comando seleciona os componentes afetados, executa verificações independentes em paralelo e reaproveita resultados aprovados sem mudanças. `npm run validate:plan` mostra a seleção; `npm run validate:full` força testes e builds completos. O CI continua executando a validação completa. Detalhes em [validação rápida](docs/11-validacao-rapida.md).
 
-Requisitos: Node.js 20+ e PostgreSQL. Copie `.env.example` para `.env`, configure `DATABASE_URL` e `JWT_SECRET` e execute:
+Requisitos: Node.js 22 (usado no Docker e no Render) e PostgreSQL. Copie `.env.example` para `.env`, configure `DATABASE_URL` e `JWT_SECRET` e execute:
 
 ```powershell
 npm install

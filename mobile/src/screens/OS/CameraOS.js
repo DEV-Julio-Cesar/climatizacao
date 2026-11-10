@@ -7,10 +7,11 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../services/api';
-import { enfileirar } from '../../database/sqlite';
+import { enfileirarLote, listarFila } from '../../database/sqlite';
+import { guardarFoto, removerArquivoPrivado } from '../../services/OfflineArquivos';
+import { tentarSincronizarOffline } from '../../services/SyncService';
 
 // Tipos de foto permitidos pelo servidor (exceto ASSINATURA — tem tela própria)
 const TIPOS_CAMERA = ['ANTES', 'DEPOIS', 'EVIDENCIA'];
@@ -40,12 +41,17 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
   const [comentario, setComentario] = useState('');
   const [localizacao, setLocalizacao] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [salvo, setSalvo] = useState(false);
+  const enviando = useRef(false);
   const camera = useRef(null);
 
   // Atualiza o título da tela conforme o tipo selecionado
   useEffect(() => {
     navigation.setOptions({ title: LABELS_TIPO[tipo] || 'Registro fotográfico' });
   }, [navigation, tipo]);
+  useEffect(() => () => {
+    if (foto?.uri) void removerArquivoPrivado(foto.uri).catch(() => {});
+  }, [foto?.uri]);
 
   if (!permission) return <View style={s.center}><ActivityIndicator /></View>;
   if (!permission.granted) {
@@ -60,10 +66,11 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
   }
 
   const capturar = async () => {
+    let original, reduzida;
     try {
-      const original = await camera.current?.takePictureAsync({ quality: .8 });
+      original = await camera.current?.takePictureAsync({ quality: .8 });
       if (!original) return;
-      const reduzida = await ImageManipulator.manipulateAsync(
+      reduzida = await ImageManipulator.manipulateAsync(
         original.uri,
         [{ resize: { width: 1200 } }],
         { compress: .75, format: ImageManipulator.SaveFormat.JPEG },
@@ -80,10 +87,12 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
       }
     } catch (e) {
       Alert.alert('Câmera', e.message);
-    }
+    } finally { if (original?.uri && original.uri !== reduzida?.uri) await removerArquivoPrivado(original.uri).catch(() => {}); }
   };
 
   const enviar = async () => {
+    if (enviando.current || salvo || !foto) return;
+    enviando.current = true;
     setLoading(true);
     const agora = Date.now();
     const metadados = {
@@ -93,38 +102,29 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
       client_uuid: `foto-${os_id}-${tipo}-${agora}`,
     };
 
+    let uri, gravado = false;
     try {
-      await api.uploadFoto(
-        os_id,
-        tipo,
-        { uri: foto.uri, name: `os_${os_id}_${tipo}_${agora}.jpg`, type: 'image/jpeg' },
-        metadados,
-      );
+      const usuario = JSON.parse(await SecureStore.getItemAsync('climasaas_usuario') || 'null');
+      if (!usuario?.id || !usuario?.empresa_id) throw new Error('Entre novamente para salvar a foto.');
+      const conta = `${usuario.empresa_id}:${usuario.id}`;
+      uri = await guardarFoto(foto.uri);
+      const ids = await enfileirarLote([{ tipo: 'FOTO_OS', payload: {
+        os_id, tipo, uri, nome: `os_${os_id}_${tipo}_${agora}.jpg`, mime: 'image/jpeg', metadados,
+      } }], conta);
+      gravado = true; setSalvo(true);
+      await tentarSincronizarOffline().catch(() => {});
+      let pendente = true;
+      try { pendente = (await listarFila()).some(item => ids.includes(item.id)); } catch {}
       Alert.alert(
-        'Foto registrada',
-        'Você pode adicionar outra foto a partir dos detalhes da O.S.',
+        pendente ? 'Foto salva no aparelho' : 'Foto registrada',
+        pendente ? 'A foto foi preservada com proteção local. Consulte a central de sincronização para acompanhar o envio.' : 'Você pode adicionar outra foto a partir dos detalhes da O.S.',
         [{ text: 'Voltar à O.S.', onPress: () => navigation.goBack() }],
       );
     } catch (e) {
-      if (!e.status) {
-        // Erro de rede — salva offline
-        const uri = `${FileSystem.documentDirectory}os_${os_id}_${tipo}_${agora}.jpg`;
-        await FileSystem.copyAsync({ from: foto.uri, to: uri });
-        await enfileirar('FOTO_OS', {
-          os_id, tipo, uri,
-          nome: `os_${os_id}_${tipo}_${agora}.jpg`,
-          mime: 'image/jpeg',
-          metadados,
-        });
-        Alert.alert(
-          'Foto salva offline',
-          'Ela será enviada automaticamente pela central de sincronização.',
-          [{ text: 'Voltar à O.S.', onPress: () => navigation.goBack() }],
-        );
-      } else {
-        Alert.alert('Falha no upload', e.message);
-      }
+      Alert.alert(gravado ? 'Foto preservada' : 'Não foi possível salvar a foto', gravado ? 'Consulte a central de sincronização.' : e.message);
     } finally {
+      if (!gravado && uri) await removerArquivoPrivado(uri).catch(() => {});
+      enviando.current = false;
       setLoading(false);
     }
   };
@@ -188,6 +188,7 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
             <TouchableOpacity
               style={[s.button, s.secondary]}
               onPress={() => { setFoto(null); setComentario(''); }}
+              disabled={loading || salvo}
             >
               <Ionicons name="refresh" size={19} color={colors.text} />
               <Text style={s.secondaryText}>Refazer</Text>
@@ -195,7 +196,7 @@ export default function CameraOS({ route, navigation }) { const { colors, styles
             <TouchableOpacity
               style={[s.button, s.green]}
               onPress={enviar}
-              disabled={loading}
+              disabled={loading || salvo}
             >
               {loading
                 ? <ActivityIndicator color="#fff" />

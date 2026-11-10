@@ -43,6 +43,50 @@ test('health check responde sem autenticação', async () => {
   assert.equal(result.body.status, 'ok');
 });
 
+test('aviso de privacidade usa contato configurado, escapa HTML e não permite cache', async () => {
+  const nome=process.env.PRIVACY_CONTROLLER_NAME,contato=process.env.PRIVACY_CONTACT_EMAIL;
+  process.env.PRIVACY_CONTROLLER_NAME='<script>nome</script> $&';
+  process.env.PRIVACY_CONTACT_EMAIL='privacidade@example.com';
+  try {
+    const r=await fetch(`http://127.0.0.1:${server.address().port}/privacidade`),html=await r.text();
+    assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');
+    assert.ok(html.includes('&lt;script&gt;nome&lt;/script&gt; $&amp;'));
+    assert.ok(!html.includes('<script>nome'));
+    assert.ok(html.includes('privacidade@example.com'));assert.ok(!html.includes('{{CONTATO}}'));
+  } finally {
+    if(nome===undefined)delete process.env.PRIVACY_CONTROLLER_NAME;else process.env.PRIVACY_CONTROLLER_NAME=nome;
+    if(contato===undefined)delete process.env.PRIVACY_CONTACT_EMAIL;else process.env.PRIVACY_CONTACT_EMAIL=contato;
+  }
+});
+
+test('protocolos de privacidade exigem autenticação e não permitem cache', async () => {
+  for(const method of ['GET','POST','PATCH']) {
+    const rota=method==='PATCH'?'/privacidade/solicitacoes/00000000-0000-4000-8000-000000000001':'/privacidade/solicitacoes';
+    const r=await fetch(`http://127.0.0.1:${server.address().port}${rota}`,{method});
+    assert.equal(r.status,401);assert.equal(r.headers.get('cache-control'),'private, no-store');await r.text();
+  }
+  const detalhe=await fetch(`http://127.0.0.1:${server.address().port}/privacidade/solicitacoes/00000000-0000-4000-8000-000000000001`);
+  assert.equal(detalhe.status,401);assert.equal(detalhe.headers.get('cache-control'),'private, no-store');await detalhe.text();
+});
+
+test('protocolo lista apenas escopo autorizado pela sessão e aceita análise de gestor', async () => {
+  const original=db.query,transaction=db.transaction;let listou=false,atualizou=false;
+  db.transaction=async fn=>fn({query:(...args)=>db.query(...args)});
+  db.query=async(sql,args)=>{
+    if(sql.includes(AUTH_MIDDLEWARE_SQL))return {rows:[{...authOk.rows[0],perfil:'GESTOR',overrides:[]}]};
+    if(sql.includes('FROM privacidade_solicitacoes')&&sql.includes('FOR UPDATE'))return {rows:[{status:'RECEBIDA',cliente_id:null}]};
+    if(sql.includes('FROM privacidade_solicitacoes')){listou=true;assert.deepEqual(args,[3,true,2,true,0,null,null,null]);return {rows:[]};}
+    if(sql.startsWith('UPDATE privacidade_solicitacoes')){atualizou=true;assert.equal(args[4],3);}
+    return {rows:[]};
+  };
+  try {
+    const headers={Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'};
+    assert.equal((await request(server,'/privacidade/solicitacoes',{headers})).status,200);
+    assert.equal((await request(server,'/privacidade/solicitacoes/00000000-0000-4000-8000-000000000001',{method:'PATCH',headers,body:JSON.stringify({status:'EM_ANALISE',resposta:'Pedido recebido e em análise'})})).status,200);
+    assert.equal(listou,true);assert.equal(atualizou,true);
+  } finally {db.query=original;db.transaction=transaction;}
+});
+
 test('recuperação responde sem revelar cadastro e limita a conta entre IPs',async()=>{
   const service=require('../src/services/RecuperacaoSenhaService'),config=service.configurado,solicitar=service.solicitar;
   service.configurado=()=>true;const recebidos=[];service.solicitar=async email=>{recebidos.push(email);};
@@ -156,6 +200,8 @@ test('técnico não contorna permissão de reagendamento pela rota agendar', asy
 
 test('exportação de técnico não consulta cadastro empresarial de clientes', async () => {
   const original = db.query;
+  const transaction = db.transaction;
+  db.transaction = async fn => fn({ query: (...args) => db.query(...args) });
   db.query = async sql => {
     if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
     assert.ok(!sql.includes('FROM clientes'), 'não deve exportar clientes da empresa');
@@ -165,7 +211,7 @@ test('exportação de técnico não consulta cadastro empresarial de clientes', 
     const resposta = await request(server, '/conta/dados', { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(resposta.status, 200);
     assert.deepEqual(resposta.body.clientes_empresa, []);
-  } finally { db.query = original; }
+  } finally { db.query = original; db.transaction = transaction; }
 });
 
 test('sessão web usa cookie, rotaciona refresh e revoga acesso no logout', async () => {
@@ -465,20 +511,43 @@ test('conversas do WhatsApp exigem autenticação', async () => {
   assert.equal(result.status, 401);
 });
 
-test('robô do WhatsApp apresenta as duas opções no primeiro contato', () => {
-  const resposta = WhatsAppBotService.decidir('INICIO', 'Olá');
-  assert.match(resposta.texto, /1 - Já sou cliente/);
-  assert.match(resposta.texto, /2 - Ainda não sou cliente/);
-  assert.equal(resposta.proximaEtapa, 'AGUARDANDO_TIPO');
+test('webhook exige assinatura e confirma somente após persistir',async()=>{
+  const crypto=require('node:crypto'),Contas=require('../src/services/WhatsAppContaService'),Automacao=require('../src/services/WhatsAppAutomacaoService');
+  const segredo=process.env.WHATSAPP_APP_SECRET,originalIdentificar=Contas.identificar,originalReceber=Automacao.receber;
+  const body=JSON.stringify({entry:[{changes:[{value:{metadata:{phone_number_id:'destino-teste'},messages:[{id:'teste.assinado',from:'5500000000000',type:'text',text:{body:'Olá'}}]}}]}]});
+  const enviar=(assinatura)=>fetch(`http://127.0.0.1:${server.address().port}/webhooks/whatsapp`,{method:'POST',headers:{'Content-Type':'application/json','x-hub-signature-256':assinatura},body});
+  let persistiu=false;
+  try{
+    delete process.env.WHATSAPP_APP_SECRET;assert.equal((await enviar('invalida')).status,503);
+    process.env.WHATSAPP_APP_SECRET='segredo-ficticio';Contas.identificar=async()=>({empresa_id:3});
+    Automacao.receber=async()=>{persistiu=true;};assert.equal((await enviar('invalida')).status,401);assert.equal(persistiu,false);
+    const assinatura='sha256='+crypto.createHmac('sha256',process.env.WHATSAPP_APP_SECRET).update(body).digest('hex');
+    assert.equal((await enviar(assinatura)).status,200);assert.equal(persistiu,true);
+    Automacao.receber=async()=>{throw Object.assign(new Error('Falha de teste'),{code:'TEST_DB'});};assert.equal((await enviar(assinatura)).status,503);
+  }finally{if(segredo===undefined)delete process.env.WHATSAPP_APP_SECRET;else process.env.WHATSAPP_APP_SECRET=segredo;Contas.identificar=originalIdentificar;Automacao.receber=originalReceber;}
 });
 
-test('robô identifica cliente e encaminha novo contato', () => {
-  const cliente = WhatsAppBotService.decidir('AGUARDANDO_TIPO', '1', 'Maria');
-  assert.match(cliente.texto, /Maria/);
-  assert.equal(cliente.proximaEtapa, 'ATENDIMENTO_CLIENTE');
-  const novo = WhatsAppBotService.decidir('AGUARDANDO_TIPO', '2');
-  assert.match(novo.texto, /Informe seu nome/);
-  assert.equal(novo.proximaEtapa, 'NOVO_CONTATO');
+test('configuração e simulação exigem gestão e validam campos estritos',async()=>{
+  const original=db.query;db.query=async(sql)=>{if(sql.includes(AUTH_MIDDLEWARE_SQL))return authOk;throw new Error('Não deve consultar configuração inválida');};
+  try{
+    for(const [method,rota] of [['PUT','/atendimento/whatsapp/automacao'],['POST','/atendimento/whatsapp/automacao/simular']]){
+      const options={method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:'{}'};
+      assert.equal((await request(server,rota,options)).status,403);
+      options.headers.Authorization=`Bearer ${tokenGestor}`;assert.equal((await request(server,rota,options)).status,400);
+    }
+    const config={...WhatsAppBotService.PADRAO,nome_atendimento:'Marca de teste'};
+    const result=await request(server,'/atendimento/whatsapp/automacao/simular',{method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:JSON.stringify({texto:'Olá',config,estado:{etapa:'INICIO'}})});
+    assert.equal(result.status,200);assert.match(result.body.texto,/Marca de teste/);
+  }finally{db.query=original;}
+});
+
+test('robo apresenta servicos e encaminha fluxo antigo sem divulgar cadastro', () => {
+  const resposta=WhatsAppBotService.decidir('INICIO','Ola');
+  assert.match(resposta.texto,/0 - Falar com atendente/);
+  assert.equal(resposta.proximaEtapa,'AGUARDANDO_SERVICO');
+  const antiga=WhatsAppBotService.decidir('AGUARDANDO_TIPO','1','Nome confidencial');
+  assert.ok(!antiga.texto.includes('Nome confidencial'));
+  assert.equal(antiga.proximaEtapa,'AGUARDANDO_SERVICO');
 });
 
 test('WhatsApp normaliza o nono dígito de celular brasileiro', () => {
@@ -486,50 +555,26 @@ test('WhatsApp normaliza o nono dígito de celular brasileiro', () => {
   assert.equal(WhatsAppService._formatarNumero('5584988986845'), '5584988986845');
 });
 
-test('atendente assume conversa de forma vinculada ao próprio usuário', async () => {
-  const originalQuery = db.query;
-  const originalEnviar = WhatsAppService.enviarMensagem;
-  WhatsAppService.enviarMensagem = async (_telefone, texto) => ({ messages: [{ id: `wamid.${texto.length}` }] });
-  db.query = async (sql, params) => {
-    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
-    if (sql.includes("fila_status='ATENDENDO'")) {
-      assert.deepEqual(params, [2, '15', 3]);
-      return { rows: [{ id: 15, telefone: '5584999999999', fila_status: 'ATENDENDO', atendente_id: 2, bot_ativo: false }] };
-    }
-    if (sql.includes('SELECT nome FROM usuarios')) return { rows: [{ nome: 'Carlos' }] };
-    if (sql.includes('INSERT INTO whatsapp_mensagens')) { assert.match(params[2], /Carlos/); return { rows: [{ id: 30 }] }; }
-    if (sql.includes('UPDATE whatsapp_conversas SET ultima_mensagem')) return { rows: [] };
-    throw new Error(`SQL não esperado: ${sql}`);
+test('assumir e encerrar vinculam usuario, invalidam robo e nao enviam mensagens', async()=>{
+  const originalQuery=db.query,originalTx=db.transaction,originalEnviar=WhatsAppService.enviarMensagem;
+  let chamadas=0,fechou=false;
+  WhatsAppService.enviarMensagem=async()=>{chamadas++;throw new Error('Nao enviar');};
+  db.transaction=fn=>fn(db);
+  db.query=async(sql,params)=>{
+    if(sql.includes(AUTH_MIDDLEWARE_SQL))return authOk;
+    if(sql.startsWith('SELECT * FROM whatsapp_conversas')){assert.deepEqual(params,['15',3]);assert.match(sql,/FOR UPDATE/);return{rows:[{id:15,fila_status:fechou?'ATENDENDO':'ESPERA',atendente_id:fechou?2:null}]};}
+    if(sql.includes("fila_status='ATENDENDO'")){assert.deepEqual(params,[2,'15',3]);assert.match(sql,/bot_versao=bot_versao\+1/);fechou=true;return{rows:[{id:15,fila_status:'ATENDENDO',atendente_id:2,bot_ativo:false}]};}
+    if(sql.includes('SELECT nome FROM usuarios'))return{rows:[{nome:'Carlos'}]};
+    if(sql.includes('encerrado_em=NOW()')){assert.deepEqual(params,['15',3]);assert.match(sql,/bot_versao=bot_versao\+1/);return{rows:[]};}
+    throw new Error('SQL inesperado');
   };
-  try {
-    const result = await request(server, '/atendimento/whatsapp/conversas/15/assumir', {
-      method: 'POST', headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' }, body: '{}',
-    });
-    assert.equal(result.status, 200);
-    assert.equal(result.body.atendente_id, 2);
-    assert.equal(result.body.bot_ativo, false);
-  } finally { db.query = originalQuery; WhatsAppService.enviarMensagem = originalEnviar; }
-});
-
-test('somente atendente responsável encerra a conversa', async () => {
-  const originalQuery = db.query;
-  const originalEnviar = WhatsAppService.enviarMensagem;
-  WhatsAppService.enviarMensagem = async (_telefone, texto) => ({ messages: [{ id: `wamid.${texto.length}` }] });
-  db.query = async (sql, params) => {
-    if (sql.includes(AUTH_MIDDLEWARE_SQL)) return authOk;
-    if (sql.includes('SELECT * FROM whatsapp_conversas')) { assert.deepEqual(params, ['15', 3, 2]); return { rows: [{ id: 15, telefone: '5584999999999' }] }; }
-    if (sql.includes('SELECT nome FROM usuarios')) return { rows: [{ nome: 'Carlos' }] };
-    if (sql.includes('INSERT INTO whatsapp_mensagens')) { assert.match(params[2], /encerrado por Carlos/); return { rows: [{ id: 31 }] }; }
-    if (sql.includes('encerrado_em=NOW()')) return { rows: [{ id: 15 }] };
-    throw new Error(`SQL não esperado: ${sql}`);
-  };
-  try {
-    const result = await request(server, '/atendimento/whatsapp/conversas/15/encerrar', {
-      method: 'POST', headers: { Authorization: `Bearer ${tokenGestor}`, 'Content-Type': 'application/json' }, body: '{}',
-    });
-    assert.equal(result.status, 200);
-    assert.equal(result.body.mensagem, 'Atendimento encerrado.');
-  } finally { db.query = originalQuery; WhatsAppService.enviarMensagem = originalEnviar; }
+  try{
+    const options={method:'POST',headers:{Authorization:`Bearer ${tokenGestor}`,'Content-Type':'application/json'},body:'{}'};
+    const r=await request(server,'/atendimento/whatsapp/conversas/15/assumir',options);
+    assert.equal(r.status,200);assert.equal(r.body.atendente_id,2);assert.equal(r.body.bot_ativo,false);
+    const f=await request(server,'/atendimento/whatsapp/conversas/15/encerrar',options);
+    assert.equal(f.status,200);assert.equal(f.body.mensagem,'Atendimento encerrado.');assert.equal(chamadas,0);
+  }finally{db.query=originalQuery;db.transaction=originalTx;WhatsAppService.enviarMensagem=originalEnviar;}
 });
 
 test('técnico com acesso à agenda consegue carregar a lista de responsáveis', async () => {

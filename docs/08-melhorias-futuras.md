@@ -110,6 +110,6 @@ Itens do web também estão em [06-web.md](./06-web.md).
 Estado detalhado e implantacao: [lote 13](./13-implementacao-pendencias.md).
 
 1. Homologar migracoes, dispositivo, dominio e contas WhatsApp.
-2. Recuperacao de senha com entrega, tema completo e testes de interface.
-3. Tempo real, agendamento guiado do bot e paginacao.
+2. Homologar recuperação de senha/SMTP do lote 15; completar tema e testes de interface.
+3. Homologar SSE/proxy do lote 15; implementar agendamento guiado do bot e paginação.
 4. Armazenamento externo e integracoes de cobranca/fiscal conforme necessidade.

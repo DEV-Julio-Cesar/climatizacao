@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../config/logger');
 
 // Integração com a Meta WhatsApp Cloud API
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api
@@ -25,6 +26,7 @@ class WhatsAppService {
 
   // Envia uma mensagem de texto simples
   async enviarMensagem(telefone, mensagem) {
+    if (!this.configurado()) throw new Error('Integração do WhatsApp não configurada.');
     const payload = {
       messaging_product: 'whatsapp',
       to:                this._formatarNumero(telefone),
@@ -34,12 +36,10 @@ class WhatsAppService {
 
     try {
       const response = await axios.post(this.apiUrl, payload, { headers: this.headers, timeout: 30_000 });
-      console.log('✅ WhatsApp texto enviado:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Falha ao enviar texto WhatsApp:', error.response?.data || error.message);
-      const detalhe = error.response?.data?.error?.message;
-      throw new Error(detalhe || 'Falha ao enviar mensagem pela Meta.');
+      logger.erro('whatsapp.enviar_texto', { erro_codigo: error.response?.data?.error?.code || error.code || 'META_ERROR' });
+      throw new Error('Não foi possível confirmar o envio pela Meta.');
     }
   }
 

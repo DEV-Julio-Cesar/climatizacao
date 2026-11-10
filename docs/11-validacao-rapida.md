@@ -1,5 +1,9 @@
 # Validação rápida
 
+`npm run test:e2e` é uma suíte separada de interação em navegador com PostgreSQL de testes, incluindo componentes de privacidade mobile renderizados em React Native Web. Não é acionada automaticamente pelo validador rápido; o job `interface` do CI executa a suíte. Preparação e limites em [homologação de interface](./21-homologacao-interface.md).
+
+A suíte offline também inclui `test/offline-protecao.test.js`, com SQLite real e testes de cifragem/migração por adapter AES-GCM. Ela não substitui Keystore/Keychain e arquivos nativos em aparelho; veja [homologação offline](./19-homologacao-protecao-offline.md).
+
 - `npm run validate`: valida os componentes afetados pelas alterações staged, unstaged e arquivos novos em relação ao HEAD. Alterações apenas em documentação não disparam builds.
 - `npm run validate:plan`: exibe quais verificações serão executadas ou reaproveitadas.
 - `npm run validate:full`: força a suíte completa e builds do painel/mobile, sem reaproveitar resultados.

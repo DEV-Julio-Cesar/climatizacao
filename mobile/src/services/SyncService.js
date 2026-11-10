@@ -3,6 +3,7 @@ import { listarFila, registrarFalha, removerFila } from '../database/sqlite';
 import * as SecureStore from 'expo-secure-store';
 import { api } from './api';
 import * as FileSystem from 'expo-file-system/legacy';
+import { comFotoParaUpload } from './OfflineArquivos';
 
 // Após cinco falhas, pausa o envio automático e mantém o reenvio manual.
 const MAX_TENTATIVAS = 5;
@@ -28,8 +29,8 @@ function jaProcessado(error) {
  *    no lado do servidor (ex.: POST /os/fotos).
  *  - Respostas 2xx ou 409-"já-processado" são tratadas como sucesso:
  *    o item é removido da fila independentemente.
- *  - Erros 4xx (exceto os idempotentes acima) são falhas permanentes: o item
- *    é marcado com erro mas a fila continua processando os próximos.
+ *  - Erros 4xx (exceto os idempotentes acima) preservam o item e interrompem
+ *    o lote para não executar operações dependentes fora de ordem.
  *  - Erros 5xx ou de rede interrompem o loop para não sobrecarregar o servidor.
  *
  * @param {number|null} itemId - Se informado, processa apenas esse item da fila.
@@ -151,12 +152,12 @@ async function _despachar(tipo, payload, clientUuid) {
     case 'FOTO_OS': {
       // Passa client_uuid para deduplicação no servidor
       const metadados = { ...(dados.metadados || {}), client_uuid: clientUuid };
-      const resultado = await api.uploadFoto(
+      const resultado = await comFotoParaUpload(dados.uri, uri => api.uploadFoto(
         dados.os_id,
         dados.tipo,
-        { uri: dados.uri, name: dados.nome, type: dados.mime },
+        { uri, name: dados.nome, type: dados.mime },
         metadados,
-      );
+      ), dados.mime);
       return resultado;
     }
 

@@ -11,6 +11,7 @@ const requestLogger = require('./middlewares/requestLogger');
 const AuthController = require('./controllers/AuthController');
 const RecuperacaoSenhaController = require('./controllers/RecuperacaoSenhaController');
 const LgpdController = require('./controllers/LgpdController');
+const PrivacidadeController = require('./controllers/PrivacidadeController');
 const osRoutes = require('./routes/os.routes');
 const cadastroRoutes = require('./routes/cadastro.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -107,7 +108,14 @@ function createApp() {
     health: '/health',
     privacidade: '/privacidade',
   }));
-  app.get('/privacidade', (_req, res) => res.sendFile(path.resolve(__dirname, 'web', 'privacidade.html')));
+  app.get('/privacidade', (_req, res) => {
+    const escapar = valor => String(valor).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const html = require('fs').readFileSync(path.resolve(__dirname, 'web', 'privacidade.html'), 'utf8');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.type('html').send(html
+      .replace('{{RESPONSAVEL}}', () => escapar(process.env.PRIVACY_CONTROLLER_NAME || 'ClimaSaaS — consulte a identificação jurídica no contrato com o fornecedor da plataforma.'))
+      .replace('{{CONTATO}}', () => escapar(process.env.PRIVACY_CONTACT_EMAIL || 'Solicite o contato de privacidade à empresa que cadastrou seus dados, pelos canais do seu contrato ou atendimento.')));
+  });
   app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
   app.get('/health/ready', async (_req, res) => {
     try {
@@ -142,9 +150,18 @@ function createApp() {
     return res.json({ usuario: { id: u.usuario_id, empresa_id: u.empresa_id, nome: u.nome, perfil: u.perfil, permissoes: u.permissoes } });
   });
   app.get('/eventos',authMiddleware,require('./services/EventoService').stream);
-  // Direitos LGPD: portabilidade (GET) e exclusão (DELETE)
+  // Privacidade: resumo pessoal, desativação e análise de solicitações.
   app.get('/conta/dados',    authMiddleware, LgpdController.exportarDados);
-  app.delete('/conta/dados', authMiddleware, LgpdController.excluirDados);
+  const exclusaoLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5,
+    keyGenerator: req => `${req.usuarioLogado.empresa_id}:${req.usuarioLogado.usuario_id}`,
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { erro: 'Muitas tentativas de desativação. Aguarde 15 minutos.' } });
+  app.delete('/conta/dados', authMiddleware, exclusaoLimiter, LgpdController.excluirDados);
+  app.use('/privacidade/solicitacoes', (_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
+  app.post('/privacidade/solicitacoes', authMiddleware, PrivacidadeController.criar);
+  app.get('/privacidade/solicitacoes', authMiddleware, PrivacidadeController.listar);
+  app.get('/privacidade/solicitacoes/:id', authMiddleware, PrivacidadeController.detalhes);
+  app.patch('/privacidade/solicitacoes/:id', authMiddleware, PrivacidadeController.atualizar);
   app.use(whatsappRoutes);
   app.use(osRoutes);
   app.use(cadastroRoutes);

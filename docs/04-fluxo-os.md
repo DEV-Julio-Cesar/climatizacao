@@ -27,10 +27,10 @@ Documenta o caminho de ponta a ponta de uma OS, desde a criação até o envio d
       │── POST /os/fotos (ASSINATURA) ──────────►│
       │── POST /os/:id/eventos (CHECKOUT) ─────►│── UPDATE checkout + GPS
       │── PATCH /os/:id/status (FINALIZADA) ───►│── baixar estoque
-      │                                         │── gerar PDF (pdfkit)
-      │                                         │── UPDATE pdf_conteudo, pdf_url
+      │                                         │── enfileirar documento
+      │                                         │── COMMIT da finalização
       │◄── 200 { os, pdf_url } ─────────────────│
-      │                                         │── WhatsApp: template os_finalizada ──►[Cliente]
+      │                                         │── Worker: PDF e WhatsApp ──►[Cliente]
 ```
 
 ---
@@ -161,7 +161,7 @@ Documenta o caminho de ponta a ponta de uma OS, desde a criação até o envio d
 **Fluxo:**
 1. Cliente assina no canvas
 2. Canvas gera PNG base64
-3. Salvo em cache local
+3. Nome do responsável coletado e enviado em `assinante_nome`; PNG salvo em cache local
 4. `POST /os/fotos` (tipo `ASSINATURA`) — upload da assinatura
 
 ---
@@ -207,7 +207,11 @@ Para cada item de peça (`tipo = 'PECA'` e `estoque_baixado = FALSE`):
 - `finalizado_em = NOW()`
 - Histórico: `EM_ANDAMENTO → FINALIZADA`
 
-### Geração de PDF (`_gerarEPersistirPdf`) — fora da transação:
+### Processamento assíncrono do documento
+
+A finalização inclui a tarefa em `fila_documentos` na mesma transação da baixa/status. Após o commit, `DocumentoWorker` processa a tarefa persistida, com retry e recuperação de tarefas abandonadas. A resposta pode conter `pdf_url: null`. Acompanhe `documento_status` nos detalhes da OS ou a Central de documentos.
+
+Etapas de geração no worker:
 1. Busca dados completos (OS + cliente + empresa + técnico)
 2. Busca fotos, checklist, medições, itens em paralelo (`Promise.all`)
 3. `PdfService.gerarOsPdf(dados, fotos)` → Buffer PDF
@@ -216,13 +220,13 @@ Para cada item de peça (`tipo = 'PECA'` e `estoque_baixado = FALSE`):
 6. `UPDATE ordens_servico SET pdf_conteudo = $1, pdf_url = $2...`
 7. Se cliente tem telefone e WhatsApp configurado: envia template `os_finalizada` com PDF
 
-> **Nota**: geração de PDF é melhor-esforço. Se falhar, a OS continua finalizada e um aviso é logado.
+> Se a geração/envio falhar, a OS permanece finalizada e a tarefa persistente permite novas tentativas e reprocessamento autorizado. O WhatsApp pode se repetir se houver falha após o aceite remoto e antes da confirmação local.
 
 ---
 
 ## Passo 10 — Pós-Finalização
 
-- **`pdf_url`** retornado na resposta da finalização
+- **`pdf_url`** pode vir nulo na finalização; consulte novamente a OS após o processamento
 - **WhatsApp**: cliente recebe PDF automaticamente (se WhatsApp estiver configurado)
 - **Web**: OS aparece em "O.S. Finalizadas" no `PainelDespacho`
 - **Pagamento**: gestor registra `POST /os/:id/pagamentos`
@@ -258,11 +262,11 @@ Quando o técnico está sem internet, o `SyncService.js` processa a fila SQLite 
 | `FOTO_OS` | `POST /os/fotos` + deleta arquivo local |
 
 **Idempotência garantida por:**
-- `client_uuid` no payload → servidor ignora duplicatas
+- Mutações de OS: cabeçalho `Idempotency-Key`; fotos: `client_uuid`. Mesma chave/payload recupera resultado; payload diferente é rejeitado
 - Índice único `(tipo, client_uuid)` no SQLite local
-- Resposta 409 "já processado" = tratado como sucesso
+- Apenas 409 reconhecido pelo cliente como já sincronizado/existente/duplicado é tratado como sucesso; conflito comum não é sucesso
 
 **Estratégia de erro:**
-- Erro 4xx → marca falha, continua para o próximo item
+- Erro 4xx não reconhecido como já processado → registra falha e interrompe o lote para preservar dependências
 - Erro 5xx ou rede → para o loop (não martela o servidor)
-- Máximo de tentativas rastreado em `fila_sync.tentativas`
+- Após cinco falhas, pausa envio automático e mantém o item para reenvio manual; não apaga payload/evidências

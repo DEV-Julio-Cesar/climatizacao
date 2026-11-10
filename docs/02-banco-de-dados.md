@@ -3,6 +3,10 @@
 PostgreSQL (Neon em produção). Schema definido em `src/database/migration.sql`.  
 Patches incrementais em `src/database/patches/`.
 
+## Estruturas adicionadas pelos patches
+
+O inventário abaixo das tabelas principais deve ser lido junto dos patches: também existem `sessoes` (refresh revogável), `fila_documentos` (processamento assíncrono), `operacoes_idempotentes` (reenvios), `empresas_whatsapp` (conta por empresa), além das estruturas de recuperação de senha/fila cifrada de e-mails e triggers de tempo real dos patches 009/010. O patch 008 adiciona `os_fotos.assinante_nome`. Consulte os SQLs para a definição completa de colunas, índices e restrições; as tabelas deste documento são um resumo, não uma reprodução integral do schema.
+
 ---
 
 ## Diagrama de Entidades Principais
@@ -498,5 +502,8 @@ Modelos de checklist por tipo de serviço. `empresa_id IS NULL` = padrão global
 | `patches/008_nome_assinante.sql` | Nome do responsável nos metadados da assinatura |
 | `patches/009_recuperacao_senha.sql` | Tokens de recuperação e fila cifrada de e-mails |
 | `patches/010_eventos_tempo_real.sql` | Triggers para avisos de atualização por empresa |
+| `patches/011_solicitacoes_privacidade.sql` | Protocolos de privacidade e histórico de análise/respostas |
+| `patches/012_privacidade_acompanhamento.sql` | Reenvio idempotente de protocolos e índices de situação/histórico |
+| `patches/013_whatsapp_recepcao.sql` | Configuração da recepção por empresa, triagem/versão da conversa e fila persistente de respostas do robô |
 
 Use `npm run migrate` para aplicar schema e todos os patches em transação. O executor mantém `schema_migrations` e impede execução simultânea por lock.

@@ -1,5 +1,8 @@
 # Implementação das pendências — 29/10/2026
 
+> Registro histórico. Consulte a [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md) para o estado atual. Achados e resultados abaixo pertencem à versão analisada na época.
+
+
 Este documento atualiza o estado do backlog 12. As mudanças estão no código local; nenhuma migração ou configuração de produção foi aplicada durante esta entrega.
 
 ## Entregue

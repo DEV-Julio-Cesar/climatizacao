@@ -1,11 +1,16 @@
 const express = require('express');
 const controller = require('../controllers/WhatsAppController');
+const automacao = require('../controllers/WhatsAppAutomacaoController');
 const auth = require('../middlewares/authMiddleware');
 const permitir = require('../middlewares/permissaoMiddleware');
 const router = express.Router();
+router.param('id',(req,res,next,id)=>/^\d+$/.test(id)&&Number(id)>0&&Number(id)<=2147483647?next():res.status(400).json({erro:'Identificador de conversa inválido.'}));
 router.get('/webhooks/whatsapp', controller.verificarWebhook);
 router.post('/webhooks/whatsapp', controller.receberWebhook);
 router.use(auth);
+router.get('/atendimento/whatsapp/automacao', permitir('ATENDIMENTO_VISUALIZAR'), automacao.configuracao);
+router.put('/atendimento/whatsapp/automacao', permitir('ATENDIMENTO_RESPONDER'), permitir('GESTAO_GERENCIAR'), automacao.salvar);
+router.post('/atendimento/whatsapp/automacao/simular', permitir('ATENDIMENTO_VISUALIZAR'), permitir('GESTAO_GERENCIAR'), automacao.simular);
 router.get('/atendimento/whatsapp/conversas', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarConversas);
 router.get('/atendimento/whatsapp/conversas/:id', permitir('ATENDIMENTO_VISUALIZAR'), controller.listarMensagens);
 router.post('/atendimento/whatsapp/conversas/:id/mensagens', permitir('ATENDIMENTO_RESPONDER'), controller.enviarMensagem);

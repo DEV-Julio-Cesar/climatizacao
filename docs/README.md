@@ -3,14 +3,34 @@
 Índice central da documentação técnica do sistema ClimaSaaS —  
 plataforma SaaS para gestão de serviços de climatização (ar-condicionado).
 
-Estado atual: [correções, validação e implantação](./10-correcoes-e-validacao.md).
+Estado atual: [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md).
+
+Histórico: [correções, validação e implantação](./10-correcoes-e-validacao.md).
 Validação de desenvolvimento: [comando rápido e CI paralelo](./11-validacao-rapida.md).
-Próximas entregas: [pendências atuais após revisão do código](./12-pendencias-atuais.md).
-Implementação mais recente: [correções e novos fluxos do lote 13](./13-implementacao-pendencias.md).
+Pendências históricas: [pendências atuais após revisão do código](./12-pendencias-atuais.md).
+Entrega do lote 13: [correções e novos fluxos do lote 13](./13-implementacao-pendencias.md).
 Mobile atualizado: [assinatura com nome, galeria e tema](./14-mobile-assinatura-galeria-tema.md).
 Recuperação e tempo real: [Gmail, redefinição de senha e SSE](./15-recuperacao-senha-tempo-real.md).
 
 ---
+
+## Entregas e revisão recentes
+
+- [22 — Recepção WhatsApp, configuração, simulador e passagem humana](./22-whatsapp-recepcao.md).
+
+- [21 — Homologação de interface, regressões e dependências](./21-homologacao-interface.md).
+
+- [20 — Privacidade nativa, filtros e histórico web, reenvio de protocolos](./20-privacidade-web-mobile.md).
+
+- [19 — Homologação e proteção dos dados offline](./19-homologacao-protecao-offline.md).
+
+- [18 — LGPD, retenção, direitos e incidentes](./18-lgpd-protecao-dados.md).
+
+- [14 — Assinatura, galeria e tema](./14-mobile-assinatura-galeria-tema.md).
+- [15 — Recuperação de senha e SSE](./15-recuperacao-senha-tempo-real.md).
+- [16 — Estoque mobile](./16-estoque-mobile.md).
+- [17 — Estado atual e pendências](./17-revisao-documentacao-2026-11-09.md).
+- [09 — Análise histórica](./09-analise-prioridades-2026-10-29.md), [11 — Validação rápida](./11-validacao-rapida.md) e [QA/QC histórico](./qa-qc-analise.md).
 
 ## Arquivos desta pasta
 
@@ -39,7 +59,7 @@ Recuperação e tempo real: [Gmail, redefinição de senha e SSE](./15-recuperac
            │   App Mobile (Expo)     │  │   Painel Web (Vite)     │
            │   React Native 0.86     │  │   React 19              │
            │                         │  │                         │
-           │  • 30+ telas            │  │  • 12 páginas           │
+           │  • 30+ telas            │  │  • Páginas por domínio           │
            │  • Offline (SQLite)     │  │  • Calendário despacho  │
            │  • GPS + Camera         │  │  │  • Mapa da equipe    │
            │  • Push Notifications   │  │  • Central WhatsApp     │
@@ -85,7 +105,8 @@ Criação → [Notificação push] → Técnico a caminho
        → Relatório técnico (diagnóstico + checklist + medições + peças)
        → Assinatura do cliente
        → Check-out (GPS)
-       → Finalização → [Baixa de estoque] → [Gera PDF] → [Envia WhatsApp ao cliente]
+       → Finalização → [Baixa de estoque + tarefa persistente]
+       → [Worker gera PDF] → [WhatsApp se configurado]
 ```
 
 Detalhado em [04-fluxo-os.md](./04-fluxo-os.md).

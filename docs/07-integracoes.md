@@ -5,7 +5,7 @@
 ## WhatsApp — Meta Cloud API
 
 **Versão:** v24.0  
-**Arquivo:** `src/services/WhatsAppService.js`, `src/controllers/WhatsAppController.js`, `src/services/WhatsAppBotService.js`
+**Arquivos:** `src/services/WhatsAppService.js`, `src/controllers/WhatsAppController.js`, `src/services/WhatsAppBotService.js`, `src/services/WhatsAppAutomacaoService.js`, `src/services/WhatsAppBotWorker.js` e `src/controllers/WhatsAppAutomacaoController.js`
 
 ### Configuração
 
@@ -24,7 +24,7 @@ WHATSAPP_GRAPH_VERSION=v24.0
 ### Funcionalidades implementadas
 
 #### 1. Envio automático ao finalizar OS
-Quando uma OS é finalizada e o cliente tem telefone cadastrado:
+Após a finalização, o worker persistente gera o PDF e tenta enviar quando há telefone e conta WhatsApp configurada:
 ```
 Template: os_finalizada
 Header: documento (PDF da OS)
@@ -41,9 +41,9 @@ Header: documento (PDF do orçamento)
 
 #### 3. Webhook de recebimento
 `POST /webhooks/whatsapp` — recebe mensagens dos clientes:
-- Verifica assinatura HMAC com `WHATSAPP_APP_SECRET` (evita webhooks falsos)
+- Exige assinatura HMAC com `WHATSAPP_APP_SECRET`; sem segredo não processa entradas
 - Extrai telefone, mensagem e nome do contato
-- Passa para o `WhatsAppBotService`
+- Persiste entrada, triagem e resposta pendente em transação antes do 200; o worker envia depois
 
 #### 4. Bot automático (`WhatsAppBotService`)
 Etapas do fluxo automático:
@@ -51,17 +51,19 @@ Etapas do fluxo automático:
 | Etapa | Trigger | Ação |
 |---|---|---|
 | `INICIO` | Primeira mensagem | Saudação + menu de opções |
-| `AGUARDANDO_TIPO` | Após saudação | Aguarda escolha do usuário |
-| `ATENDIMENTO_CLIENTE` | Cliente existente | Informa opções de suporte |
-| `NOVO_CONTATO` | Contato novo | Captura dados para cadastro |
+| `AGUARDANDO_SERVICO` | Menu | Limpeza, instalação, reparo, orçamento ou outro assunto |
+| `AGUARDANDO_NOME` | Serviço escolhido ou identificado no texto | Pergunta nome sem documentos |
+| `AGUARDANDO_LOCALIDADE` | Nome informado | Cidade/bairro; financeiro/outros pula essa etapa |
+| `AGUARDANDO_DESCRICAO` | Localidade informada | Resumo do pedido |
+| `AGUARDANDO_ATENDENTE` | Triagem pronta, opção 0, mídia ou respostas inválidas | Espera humana com bot desativado |
 
-> **Limitação atual:** O bot é rudimentar com apenas 3-4 etapas. Não faz agendamento automático nem integra com criação de OS.
+Gestores configuram os textos e simulam a jornada no painel. Não cria cadastro/OS nem confirma preço ou agendamento. O horário configurado é informativo. Fluxos antigos recebem migração de etapa na próxima entrada. Veja [recepção e operação](./22-whatsapp-recepcao.md).
 
 #### 5. Central de atendimento humano
-- Atendente assume a conversa: `bot_ativo = FALSE`
+- Atendente assume a conversa: `bot_ativo = FALSE`, invalida respostas pendentes antigas e prepara uma saudação como rascunho; não envia automaticamente
 - Fila visual com 3 estados: Automação / Espera / Atendendo
 - Janela de 24h da Meta rastreada via `janela_atendimento_ate`
-- Envio de mensagens livres enquanto dentro da janela
+- Envio de mensagens livres pelo atendente responsável enquanto dentro da janela; encerramento interno não envia despedida automática
 
 #### 6. Normalização de números
 ```javascript
@@ -70,8 +72,8 @@ Etapas do fluxo automático:
 // "8488986845"  → "55848988986845"   (adiciona DDI + 9º dígito)
 ```
 
-### Limitação de Multi-tenant
-O webhook identifica a empresa pelo `WHATSAPP_EMPRESA_ID` (variável de ambiente), o que significa que **uma instância da API suporta apenas uma empresa no WhatsApp**. Multi-tenant completo requereria uma tabela de mapeamento `numero_whatsapp → empresa_id`.
+### Roteamento multiempresa
+O webhook identifica a empresa pelo `phone_number_id` destinatário em `empresas_whatsapp`, e só então busca o cliente nessa empresa. `token_env` referencia uma variável `WHATSAPP_ACCESS_TOKEN_*`, sem token em texto no banco. O par legado explícito `WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_EMPRESA_ID` permanece compatível. Saídas usam `WhatsAppContaService`; configuração/homologação na Meta continuam necessárias.
 
 ---
 

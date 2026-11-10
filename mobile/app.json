@@ -4,8 +4,8 @@
     "slug": "climasaas",
     "owner": "dev-julio-cesar",
     "description": "Gestão profissional de ordens de serviço, equipes e manutenção de climatização.",
-    "version": "1.0.0",
-    "runtimeVersion": "1.0.0",
+    "version": "1.1.0",
+    "runtimeVersion": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "climasaas",
@@ -20,8 +20,9 @@
       "bundleIdentifier": "com.climasaas.mobile"
     },
     "android": {
+      "allowBackup": false,
       "package": "com.climasaas.mobile",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/climasaas-icon.png",
         "backgroundColor": "#0B1F33"

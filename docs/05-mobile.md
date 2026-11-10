@@ -1,5 +1,9 @@
 # 05 — Aplicativo Mobile
 
+> Privacidade: o Perfil abre telas nativas para registrar/acompanhar pedidos e consultar respostas/histórico, com gerenciamento autorizado. Veja [lote 20](./20-privacidade-web-mobile.md).
+
+> Versão 1.1.0: [proteção dos conteúdos offline, migração e limpeza por conta](./19-homologacao-protecao-offline.md). Fila/cache/evidências usam AES-GCM; metadados SQLite permanecem visíveis. Homologar atualização por APK e uso em aparelho.
+
 > Última melhoria: [nome na assinatura/PDF, galeria e expansão do tema](./14-mobile-assinatura-galeria-tema.md). Tema ainda parcial nas telas secundárias.
 
 > Atualização: logout centralizado, pagamentos com chave de reenvio, visitas de contrato com técnico/horário, recuperação de legado e lembretes por conta estão no [lote 13](./13-implementacao-pendencias.md). A fila interrompe o lote em falha para preservar dependências; não descarta operações após cinco erros. Tema escuro ainda é parcial.
@@ -54,6 +58,10 @@ App.js
 ---
 
 ## Telas por Módulo
+
+### Entregas recentes
+
+Login inclui recuperação de senha por e-mail; redefinição abre no navegador. Orçamentos usam `OrcamentoPdfActions` e `orcamentoPdf` para ações de PDF. Assinatura coleta nome do responsável e a galeria possui zoom. Consulte os documentos [14](./14-mobile-assinatura-galeria-tema.md), [15](./15-recuperacao-senha-tempo-real.md) e [16](./16-estoque-mobile.md).
 
 ### Autenticação
 
@@ -154,7 +162,7 @@ Formulário de relatório técnico em 5 seções:
 - Toda a sequência enfileirada offline se sem internet
 
 #### `Finalizadas`
-- Lista OS finalizadas da empresa (não apenas do técnico logado)
+- Técnicos consultam suas próprias OS; gestores/admin consultam as finalizadas da empresa
 - Busca por texto
 - Exibe valor total, técnico, cliente, data de finalização
 - Link para PDF quando disponível
@@ -208,7 +216,8 @@ Hub de gestão. Exibe KPIs do mês:
 - Lista produtos e serviços ativos
 - Filtro por tipo (peça/serviço) e busca
 - Criar item de catálogo
-- Entrada rápida de estoque via modal
+- Entrada, saída e ajuste do saldo central, inclusive zero, com motivo, confirmação e histórico das últimas 200 movimentações
+- Movimentações exigem conexão e `ESTOQUE_GERENCIAR`; consulta exige `ESTOQUE_VISUALIZAR`. Veja [estoque mobile](./16-estoque-mobile.md)
 
 #### `Orcamentos`
 - Lista orçamentos com status (badge colorido)

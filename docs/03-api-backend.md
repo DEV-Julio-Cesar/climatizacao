@@ -71,7 +71,7 @@ Aplicados globalmente na ordem:
 
 ---
 
-## Rotas Públicas (sem autenticação)
+## Rotas públicas e acesso por link assinado
 
 ```
 POST /login                  → AuthController.login
@@ -79,8 +79,8 @@ POST /auth/refresh           → AuthController.refresh
 GET  /health                 → { status: "ok", timestamp }
 GET  /health/ready           → { status: "ready", database: "ok" }  (testa DB)
 GET  /privacidade            → página HTML de política de privacidade
-GET  /arquivos/fotos/:chave  → serve foto BYTEA do banco
-GET  /arquivos/ordens/:chave.pdf → serve PDF BYTEA do banco
+GET  /arquivos/fotos/:chave  → foto BYTEA; exige token de arquivo no link
+GET  /arquivos/ordens/:chave.pdf → PDF BYTEA; exige token de arquivo no link
 GET  /equipamentos/publico/:token → ficha pública do equipamento (QR Code)
 GET  /webhooks/whatsapp      → verificação de webhook Meta
 POST /webhooks/whatsapp      → receber mensagens (HMAC verificado)
@@ -105,7 +105,7 @@ GET  /                       → JSON de identificação da API
 
 ### POST /auth/refresh
 
-- Recebe `{ refresh_token }`
+- No mobile recebe `{ refresh_token }`; no painel utiliza cookie HttpOnly
 - Verifica assinatura e expiração do JWT
 - Consulta banco: usuário ativo + `iat < senha_alterada_em` (invalida refresh emitido antes de troca de senha)
 - Emite novo par de tokens (rotação de refresh token)
@@ -156,7 +156,7 @@ Além da verificação JWT padrão, consulta o banco a cada requisição para:
 | PATCH | `/os/:id/execucao` | OsExecucaoController.salvarExecucao | `OS_EXECUTAR` |
 | POST | `/os/:id/eventos` | OsEventoController.registrarEvento | `OS_EXECUTAR` |
 | POST | `/os/:id/retorno` | OsEventoController.criarRetorno | `OS_EXECUTAR` |
-| PATCH | `/os/:id/agendar` | OsEventoController.agendarVisita | `OS_EXECUTAR` |
+| PATCH | `/os/:id/agendar` | OsEventoController.agendarVisita | `OS_REAGENDAR` (gestor/admin) |
 
 **Validadores Zod para OS:**
 
@@ -277,11 +277,14 @@ Além da verificação JWT padrão, consulta o banco a cada requisição para:
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/atendimento/whatsapp/conversas` | Lista conversas (3 filas) |
+| GET | `/atendimento/whatsapp/automacao` | Configuração da recepção da própria empresa |
+| PUT | `/atendimento/whatsapp/automacao` | Salvar configuração; exige resposta e gestão |
+| POST | `/atendimento/whatsapp/automacao/simular` | Prévia de fluxo sem envio; exige visualização e gestão |
 | GET | `/atendimento/whatsapp/conversas/:id` | Mensagens de uma conversa |
 | POST | `/atendimento/whatsapp/conversas/:id/mensagens` | Enviar mensagem |
 | PATCH | `/atendimento/whatsapp/conversas/:id/fila` | Mover entre filas |
-| POST | `/atendimento/whatsapp/conversas/:id/assumir` | Humano assume |
-| POST | `/atendimento/whatsapp/conversas/:id/encerrar` | Encerrar atendimento |
+| POST | `/atendimento/whatsapp/conversas/:id/assumir` | Humano assume; não envia saudação automática |
+| POST | `/atendimento/whatsapp/conversas/:id/encerrar` | Responsável encerra; não envia despedida automática |
 
 ---
 
@@ -290,10 +293,29 @@ Além da verificação JWT padrão, consulta o banco a cada requisição para:
 | Método | Rota | Descrição |
 |---|---|---|
 | POST | `/conta/senha` | Trocar senha (invalida tokens) |
-| GET | `/conta/dados` | Exportar dados pessoais (Art. 18-II) |
-| DELETE | `/conta/dados` | Anonimizar dados (Art. 18-VI) |
+| GET | `/conta/dados` | Resumo pessoal paginado; outros dados exigem solicitação de acesso |
+| DELETE | `/conta/dados` | Desativar conta com senha e revogar acesso; não anonimiza todos os registros |
 
 ---
+
+## Contratos complementares atuais
+
+- Privacidade atualizada: listagem com filtros, `GET /privacidade/solicitacoes/:id?cursor=0` com histórico paginado e criação com `Idempotency-Key`. Exige patch 012. Contratos no [lote 20](./20-privacidade-web-mobile.md).
+
+- `GET /conta/dados?cursor=0&limite=50`: resumo pessoal paginado, sem exportar base empresarial de clientes; não equivale a acesso integral aos dados.
+- `DELETE /conta/dados`: exige senha atual e `CONFIRMAR_EXCLUSAO`; desativa conta e revoga acesso, sem prometer anonimização completa.
+- `GET/POST /privacidade/solicitacoes` e `PATCH /privacidade/solicitacoes/:id`: protocolos autenticados, isolados por empresa/solicitante, com análise gerencial autorizada. Contratos e limites em [LGPD e proteção de dados](./18-lgpd-protecao-dados.md).
+
+- `POST /logout` e `/auth/refresh/logout`: revogam sessão e limpam cookie.
+- `POST /auth/senha/solicitar` e `/auth/senha/redefinir`: recuperação por e-mail.
+- `GET /conta/sessao`: usuário e permissões atuais.
+- `GET /eventos`: SSE autenticado para o painel.
+- `POST /offline/verificar-legado`: valida referências para recuperação local.
+- `GET /documentos/tarefas` e `POST /documentos/:id/reprocessar`: acompanhamento e reprocessamento autorizado.
+- `GET /relatorios/exportar`: CSV com filtros de período/técnico/serviço.
+- `GET /relatorios/recebimentos-pendentes`: saldos com autorização financeira.
+
+O middleware exige `token_use=access`, sessão ativa, empresa ativa e consulta perfil/permissões atuais no banco. Refresh exige tipo próprio e rotação atômica do hash persistido; reutilização é rejeitada. Mutações de OS aceitam `Idempotency-Key`. Consulte os documentos [13](./13-implementacao-pendencias.md), [15](./15-recuperacao-senha-tempo-real.md) e [16](./16-estoque-mobile.md) para detalhes.
 
 ## Services
 

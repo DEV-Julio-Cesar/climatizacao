@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './src/styles/useTheme';
@@ -39,6 +40,7 @@ import Tecnicos from './src/screens/Gestao/Tecnicos';
 import { initDB } from './src/database/sqlite';
 import { AppProvider } from './src/context/AppContext';
 import PerfilScreen from './src/screens/Perfil/PerfilScreen';
+import Privacidade, { DetalhePrivacidade } from './src/screens/Perfil/Privacidade';
 import Sincronizacao from './src/screens/Perfil/Sincronizacao';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { api, configurarSessaoExpirada } from './src/services/api';
@@ -75,10 +77,13 @@ function AppContent() {
   const [token, setToken] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [online, setOnline] = useState(true);
+  const [erroLocal, setErroLocal] = useState(false);
+  const [tentativaLocal, setTentativaLocal] = useState(0);
   useEffect(() => {
-    Promise.all([SecureStore.getItemAsync('climasaas_token'), SecureStore.getItemAsync('climasaas_usuario'), initDB()])
+    setErroLocal(false);
+    Promise.all([SecureStore.getItemAsync('climasaas_token'), SecureStore.getItemAsync('climasaas_usuario'), initDB(), AsyncStorage.removeItem('@climasaas/ultima_localizacao')])
       .then(([saved, usuarioSalvo]) => { setUsuario(usuarioSalvo ? JSON.parse(usuarioSalvo) : null); setToken(saved || null); })
-      .catch(() => setToken(null));
+      .catch(() => setErroLocal(true));
     configurarSessaoExpirada(() => {
       void cancelarTodosLembretes().catch(() => {});
       SecureStore.deleteItemAsync('climasaas_refresh_token').catch(() => {});
@@ -87,7 +92,7 @@ function AppContent() {
     });
     const subscription = Network.addNetworkStateListener((state) => setOnline(Boolean(state.isConnected) && state.isInternetReachable !== false));
     return () => { subscription.remove(); configurarSessaoExpirada(null); };
-  }, []);
+  }, [tentativaLocal]);
   useEffect(() => {
     if (!token || !online) return;
     let ativo = true;
@@ -104,6 +109,7 @@ function AppContent() {
     const timer = setInterval(atualizar, 60000);
     return () => { ativo = false; clearInterval(timer); };
   }, [token, online]);
+  if (erroLocal) return <SafeAreaView style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: colors.background }}><Text style={{ color: colors.text, fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Dados locais protegidos</Text><Text style={{ color: colors.text }}>Não foi possível abrir os registros do aparelho. Desbloqueie o dispositivo e tente novamente. Se continuar, procure o suporte. Não desinstale o aplicativo enquanto houver atendimentos pendentes.</Text><Text accessibilityRole="button" onPress={() => setTentativaLocal(v => v + 1)} style={{ color: colors.primary, paddingVertical: 20 }}>Tentar novamente</Text></SafeAreaView>;
   if (token === undefined) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator /></View>;
   return (
     <View style={{ flex:1, backgroundColor:colors.background }}><NavigationContainer theme={{...(isDark?DarkTheme:DefaultTheme),colors:{...(isDark?DarkTheme:DefaultTheme).colors,primary:colors.primary,background:colors.background,card:colors.surface,text:colors.text,border:colors.border,notification:colors.danger}}}>
@@ -146,6 +152,8 @@ function AppContent() {
             <Stack.Screen name="MapaAtendimento" component={MapaAtendimento} options={{ title: 'Mapa do atendimento' }} />
             <Stack.Screen name="MapaRota" component={MapaRota} options={{ title: 'Rota do dia' }} />
             <Stack.Screen name="Sincronizacao" component={Sincronizacao} options={{ title: 'Sincronização offline' }} />
+            <Stack.Screen name="Privacidade" component={Privacidade} options={{ title: 'Privacidade e meus dados' }} />
+            <Stack.Screen name="DetalhePrivacidade" component={DetalhePrivacidade} options={{ title: 'Solicitação de privacidade' }} />
             <Stack.Screen name="CameraOS" component={CameraOS} options={{ title: 'Registro fotográfico' }} />
             <Stack.Screen name="ExecucaoOS" component={ExecucaoOS} options={{ title: 'Relatório técnico' }} />
             <Stack.Screen name="AssinaturaOS" component={AssinaturaOS} options={{ title: 'Assinatura' }} />

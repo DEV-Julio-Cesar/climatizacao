@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
+import PrivacidadeConta from '../components/PrivacidadeConta';
 
 export default function MinhaConta() {
   const [form, setForm] = useState({ atual:'', nova:'', confirmar:'' });
@@ -17,5 +18,5 @@ export default function MinhaConta() {
     } catch (e) { setErro(e.response?.data?.erro || 'Falha ao alterar senha.'); }
     finally { setSalvando(false); }
   };
-  return <div className="account-grid"><section className="panel account-card"><span className="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><p>Depois da alteração, você entrará novamente usando a nova senha.</p>{erro&&<div className="alert">{erro}</div>}<form onSubmit={salvar}><label>Senha atual</label><input type="password" autoComplete="current-password" value={form.atual} onChange={e=>setForm({...form,atual:e.target.value})} required/><label>Nova senha</label><input type="password" autoComplete="new-password" value={form.nova} onChange={e=>setForm({...form,nova:e.target.value})} minLength="8" required/><label>Confirmar nova senha</label><input type="password" autoComplete="new-password" value={form.confirmar} onChange={e=>setForm({...form,confirmar:e.target.value})} minLength="8" required/><small>Use no mínimo 8 caracteres, contendo letras e números.</small><button className="primary" disabled={salvando}>{salvando?'Alterando...':'Alterar senha'}</button></form></section></div>;
+  return <div className="account-grid"><section className="panel account-card"><span className="eyebrow">SEGURANÇA</span><h2>Alterar minha senha</h2><p>Depois da alteração, você entrará novamente usando a nova senha.</p>{erro&&<div className="alert">{erro}</div>}<form onSubmit={salvar}><label htmlFor="conta-senha-atual">Senha atual</label><input id="conta-senha-atual" type="password" autoComplete="current-password" value={form.atual} onChange={e=>setForm({...form,atual:e.target.value})} required/><label htmlFor="conta-nova-senha">Nova senha</label><input id="conta-nova-senha" type="password" autoComplete="new-password" value={form.nova} onChange={e=>setForm({...form,nova:e.target.value})} minLength="8" required/><label htmlFor="conta-confirmar-senha">Confirmar nova senha</label><input id="conta-confirmar-senha" type="password" autoComplete="new-password" value={form.confirmar} onChange={e=>setForm({...form,confirmar:e.target.value})} minLength="8" required/><small>Use no mínimo 8 caracteres, contendo letras e números.</small><button className="primary" disabled={salvando}>{salvando?'Alterando...':'Alterar senha'}</button></form></section><PrivacidadeConta/></div>;
 }

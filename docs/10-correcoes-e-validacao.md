@@ -1,5 +1,8 @@
 # Correções e validação — 29/10/2026
 
+> Registro histórico. Consulte a [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md) para o estado atual. Achados e resultados abaixo pertencem à versão analisada na época.
+
+
 ## Implementado
 
 - Dependência `expo-crypto` instalada na versão compatível com Expo 57.

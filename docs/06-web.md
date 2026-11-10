@@ -1,11 +1,13 @@
 # 06 — Painel Web
 
+> Privacidade em Minha conta: filtros por situação/tipo/protocolo, histórico paginado e proteção contra reenvio de criação. Veja [lote 20](./20-privacidade-web-mobile.md).
+
 > Atualização: a sessão usa contexto em memória e cookie HttpOnly, incluindo Clientes/Catálogo/Despacho. Há filtros/CSV no dashboard e Central de notificações/documentos. Detalhes e limitações no [lote 13](./13-implementacao-pendencias.md).
 
 **Tecnologia:** React 19 + Vite  
 **Build:** `web/dist/` servido pela API Express em `/painel/*`  
 **Público:** Gestores e administrativo (desktop/tablet)  
-**Autenticação:** Token JWT em `localStorage`  
+**Autenticação:** access JWT em memória, refresh em cookie HttpOnly e usuário/permissões em `SessionContext`
 **Roteamento:** Hash-based (`#dashboard`, `#despacho`, etc.)
 
 ---
@@ -40,11 +42,15 @@ web/
 
 ---
 
+## Atualizações atuais
+
+`Central.jsx` reúne notificações/documentos e `RecuperarSenha.jsx` permite redefinir senha. Dashboard, Despacho, Mapa e WhatsApp recebem avisos SSE e recarregam dados por REST, com consulta periódica de contingência. O dashboard oferece filtros e CSV. Veja [recuperação e SSE](./15-recuperacao-senha-tempo-real.md).
+
 ## Páginas
 
 ### Login
 - Formulário email + senha
-- Armazena `token` e dados do usuário em `localStorage`
+- Mantém access token/usuário em memória e restaura sessão pelo cookie de refresh
 - Redireciona para `#dashboard` após login
 
 ---
@@ -200,13 +206,15 @@ Hub para operação logística:
 
 Painel de chat integrado ao WhatsApp Cloud API.
 
+Recepção atualizada: [configuração por empresa, simulador, triagem e passagem humana](./22-whatsapp-recepcao.md). Gestores autorizados configuram os textos em **Configurar automação**; o simulador não envia mensagens reais. Rascunhos ficam separados por contato em memória. O operador precisa assumir para responder e a janela é conferida novamente na API.
+
 **3 filas de conversas:**
 - **Automação** — bot respondendo
 - **Espera** — aguardando humano
 - **Atendendo** — atendente ativo
 
 **Por conversa:**
-- Histórico completo de mensagens (entrada/saída)
+- Últimas 500 mensagens (entrada/saída), em ordem cronológica
 - Campo de resposta com envio
 - Botão "Assumir atendimento" (bot para, fila muda para Atendendo)
 - Botão "Encerrar atendimento" (encerra conversa)
@@ -261,7 +269,7 @@ O token JWT fica em `localStorage` no web, exposto a XSS. Migrar para cookie `Ht
 Assim como o mobile implementou renovação automática de sessão, o web precisa da mesma lógica no interceptor Axios. Hoje o usuário é deslogado quando o access-token expira (8h).
 
 **W3 — Notificações em tempo real (WebSocket ou SSE)**
-A central de WhatsApp hoje faz polling a cada 5-8s. Substituir por Server-Sent Events (SSE) reduz latência e carga no servidor. Também beneficia o PainelDespacho (atualização em tempo real quando técnico faz check-in).
+A central de WhatsApp e o PainelDespacho já recebem avisos SSE com consulta de contingência. Homologar quedas/reconexões e carga continua sendo trabalho operacional.
 
 **W4 — Exportação de relatórios para Excel/CSV**
 No Dashboard e Relatórios, adicionar botão de exportação. Backend pode servir `text/csv` de queries específicas.

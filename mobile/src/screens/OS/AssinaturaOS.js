@@ -8,10 +8,10 @@ import SignatureScreen from 'react-native-signature-canvas';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { tentarSincronizarOffline } from '../../services/SyncService';
 import { enfileirarLote, listarFila } from '../../database/sqlite';
+import { guardarBase64 } from '../../services/OfflineArquivos';
 
 export default function AssinaturaOS({ route, navigation }) { const { colors, styles: styles } = useScreenStyles(createStyles);
   const { os_id } = route.params;
@@ -35,8 +35,7 @@ export default function AssinaturaOS({ route, navigation }) { const { colors, st
       const permissao = await Location.requestForegroundPermissionsAsync();
       if (permissao.status !== 'granted') throw new Error('Autorize a localizacao para registrar o check-out.');
       const posicao = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      path = `${FileSystem.documentDirectory}assinatura_${os_id}_${Crypto.randomUUID()}.png`;
-      await FileSystem.writeAsStringAsync(path, dataUrl.replace(/^data:image\/png;base64,/, ''), { encoding: FileSystem.EncodingType.Base64 });
+      path = await guardarBase64(dataUrl.replace(/^data:image\/png;base64,/, ''));
       const coordenadas = { latitude: posicao.coords.latitude, longitude: posicao.coords.longitude };
       const ids = await enfileirarLote([
         { tipo: 'FOTO_OS', payload: { os_id, tipo: 'ASSINATURA', uri: path, nome: `assinatura_${os_id}.png`, mime: 'image/png', metadados: { assinante_nome: nome, capturada_em: new Date().toISOString(), ...coordenadas } } },

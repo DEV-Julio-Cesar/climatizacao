@@ -16,7 +16,7 @@ O sistema é composto por três camadas independentes que se comunicam via API R
 
 ## Modelo de Negócio (Multi-Tenant)
 
-Cada **empresa** é um tenant isolado. Todas as tabelas do banco contêm `empresa_id` e toda consulta filtra por esse campo, extraído do JWT do usuário autenticado. Uma empresa não consegue ver dados de outra por design.
+Cada **empresa** é um tenant isolado. As entidades são vinculadas à empresa diretamente por `empresa_id` ou por relacionamentos, como fotos vinculadas à OS. A API aplica filtros e validações a partir da sessão. Há exceções estruturais, como a tabela raiz `empresas` e checklists globais; esta revisão não comprova isolamento de todas as consultas.
 
 ```
 Empresa A ──► usuarios, clientes, aparelhos, ordens_servico, produtos...
@@ -59,7 +59,7 @@ ATENDIMENTO_VISUALIZAR ATENDIMENTO_GERENCIAR
 | `pg` | 8.12 | Driver PostgreSQL |
 | `jsonwebtoken` | 9 | JWT HS256 (access 8h + refresh 30d) |
 | `bcryptjs` | 2.4 | Hash de senhas (custo 12) |
-| `zod` | 3.23 | Validação de entrada |
+| `zod` | 4.6 | Validação de entrada; migração e contratos verificados na homologação |
 | `multer` | 1.4 | Upload de arquivos (memória, 8 MB) |
 | `pdfkit` | 0.15 | Geração de PDFs |
 | `axios` | 1.7 | Chamadas HTTP (WhatsApp API) |
@@ -107,9 +107,11 @@ Uma decisão de design importante: **fotos e PDFs são armazenados diretamente n
 
 ---
 
+Fotos/PDFs exigem link assinado temporário por arquivo e empresa, com cache `private, no-store`. Respostas autenticadas recebem links de 15 minutos; PDFs enviados ao WhatsApp usam sete dias. O UUID sozinho não autoriza acesso.
+
 ## Infraestrutura de Produção
 
-O sistema atualmente roda no **Render** (arquivo `render.yaml`):
+Há configuração para **Render** (arquivo `render.yaml`); a implantação efetiva não foi verificada nesta revisão:
 - Serviço web Node.js, plano free, região Ohio
 - Build: instala API + web, faz build do Vite
 - Start: executa migrations → inicia servidor
@@ -127,8 +129,8 @@ Há também uma configuração Docker (`Dockerfile`) e pipeline CI/CD (`deploy-a
 - **CORS** restrito por lista de origens (`CORS_ORIGIN`)
 - **Helmet** com CSP configurada
 - **Validação de magic bytes** em uploads (impede MIME spoofing)
-- **Soft delete** em todas as entidades (dados nunca são deletados fisicamente)
-- **Multi-tenant** por `empresa_id` em 100% das queries
+- **Soft delete** nas principais entidades; há exclusões físicas de fotos e substituição de itens/checklist
+- **Multi-tenant** com filtros por empresa e validação de relacionamentos; cobertura integral exige auditoria específica
 - **Transações atômicas** em operações críticas
 - **Logger estruturado** com mascaramento automático de campos sensíveis (senha, token, CPF, telefone)
-- **LGPD**: endpoints de portabilidade (`GET /conta/dados`) e exclusão/anonimização (`DELETE /conta/dados`)
+- **Privacidade**: resumo pessoal paginado (`GET /conta/dados`), desativação com senha e revogação (`DELETE /conta/dados`) e protocolos para análise de direitos. Isso não constitui anonimização completa nem certificação de adequação. Veja [LGPD e proteção de dados](./18-lgpd-protecao-dados.md).

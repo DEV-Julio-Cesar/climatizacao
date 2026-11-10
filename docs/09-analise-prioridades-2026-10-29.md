@@ -1,5 +1,8 @@
 # Análise da aplicação e próximas melhorias
 
+> Registro histórico. Consulte a [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md) para o estado atual. Achados e resultados abaixo pertencem à versão analisada na época.
+
+
 Data: 29/10/2026. Análise do código local e da documentação, sem alteração das regras da aplicação. Havia alterações prévias em package.json, package-lock.json, src/app.js e AuthController.js; os achados refletem esse estado local.
 
 ## Validação realizada

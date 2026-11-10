@@ -10,10 +10,10 @@ const shared = file => /^(package(-lock)?\.json|scripts\/|\.github\/workflows\/c
 const backend = file => shared(file) || /^(src\/|server\.js$|test\/|web\/src\/services\/sseParser\.js$)/.test(file);
 const web = file => shared(file) || file.startsWith('web/');
 const mobile = file => shared(file) || file.startsWith('mobile/');
-const offline = file => shared(file) || /^(mobile\/src\/(database\/|services\/(SyncService|api)\.js|components\/galeriaTransform\.js)|test\/(offline|assinatura-galeria)\.test\.js)/.test(file);
+const offline = file => shared(file) || /^(mobile\/src\/(database\/|services\/(SyncService|api|OfflineCrypto|OfflineArquivos)\.js|components\/galeriaTransform\.js)|test\/((offline|offline-protecao|assinatura-galeria)\.test\.js|helpers\/offline\.js))/.test(file);
 const definitions = [
   { id: 'api', accepts: backend, scope: backend, args: ['--test', '--test-isolation=none', 'test/*.test.js'] },
-  { id: 'offline', accepts: offline, scope: offline, args: ['--test', '--test-isolation=none', 'test/offline.test.js', 'test/assinatura-galeria.test.js'] },
+  { id: 'offline', accepts: offline, scope: offline, args: ['--test', '--test-isolation=none', 'test/offline.test.js', 'test/offline-protecao.test.js', 'test/assinatura-galeria.test.js'] },
   { id: 'web', accepts: web, scope: web, args: ['web/node_modules/vite/bin/vite.js', 'build'], cwd: 'web' },
   { id: 'mobile', accepts: mobile, scope: mobile, args: ['mobile/node_modules/expo/bin/cli', 'export', '--platform', 'web', '--output-dir', 'dist-test'], cwd: 'mobile' },
 ];

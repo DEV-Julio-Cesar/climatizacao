@@ -1,5 +1,8 @@
 # Análise de Qualidade — ClimaSaaS
 
+> Registro histórico. Consulte a [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md) para o estado atual. Achados e resultados abaixo pertencem à versão analisada na época.
+
+
 > Análise histórica: várias correções descritas abaixo já foram aplicadas. Consulte [estado atual e validação](./10-correcoes-e-validacao.md) antes de usar esta lista como backlog.
 
 ---

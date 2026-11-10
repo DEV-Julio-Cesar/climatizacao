@@ -1,40 +1,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const { DatabaseSync } = require('node:sqlite');
-
-function carregar(arquivo, nomes, deps, retornos) {
-  const fonte = fs.readFileSync(arquivo, 'utf8').replace(/^import .*;\r?$/gm, '').replace(/export /g, '');
-  return new Function(...nomes, `${fonte}\nreturn {${retornos}};`)(...deps);
-}
+const { ambiente, carregar } = require('./helpers/offline');
 
 test('SQLite inicializa, cria índice, isola contas e preserva itens sem dono', async () => {
-  const banco = new DatabaseSync(':memory:');
-  let conta = { id: 7, empresa_id: 3 };
-  const adapter = {
-    execAsync: async sql => banco.exec(sql),
-    getFirstAsync: async (sql, ...args) => banco.prepare(sql).get(...args),
-    getAllAsync: async (sql, ...args) => banco.prepare(sql).all(...args),
-    runAsync: async (sql, ...args) => { const resultado=banco.prepare(sql).run(...args);return {...resultado,lastInsertRowId:Number(resultado.lastInsertRowid)}; },
-    withTransactionAsync: async fn=>{banco.exec('BEGIN');try{await fn();banco.exec('COMMIT');}catch(e){banco.exec('ROLLBACK');throw e;}},
-  };
-  const storage = { getItemAsync: async () => JSON.stringify(conta) };
-  const sqlite = carregar('mobile/src/database/sqlite.js', ['SQLite', 'Crypto', 'SecureStore','Platform'], [{ openDatabaseAsync: async () => adapter }, require('node:crypto'), storage,{OS:'android'}], 'initDB,enfileirar,enfileirarLote,listarFila,salvarCache,lerCache,listarFilaLegada,assumirLegado');
+  const env = ambiente(), { banco, adapter } = env;
+  const sqlite = env.abrirSqlite();
   try {
+    banco.exec("CREATE TABLE fila_sync(id INTEGER PRIMARY KEY AUTOINCREMENT,tipo TEXT NOT NULL,payload TEXT NOT NULL,client_uuid TEXT NOT NULL DEFAULT '',tentativas INTEGER NOT NULL DEFAULT 0,ultimo_erro TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP); INSERT INTO fila_sync(tipo,payload) VALUES('EVENTO_OS','{}');");
     await sqlite.initDB(); await sqlite.initDB();
-    banco.exec("INSERT INTO fila_sync(tipo,payload) VALUES('EVENTO_OS','{}')");
     assert.ok(banco.prepare("SELECT name FROM sqlite_master WHERE name='ux_fila_tipo_uuid'").get());
     await sqlite.enfileirar('EVENTO_OS', { os_id: 1 });
     await sqlite.salvarCache('agenda', [{ id: 1 }]);
-    conta = { id: 8, empresa_id: 4 };
+    env.conta = { id: 8, empresa_id: 4 };
     assert.deepEqual(await sqlite.listarFila(), []);
     assert.equal(await sqlite.lerCache('agenda'), null);
     await sqlite.enfileirar('EVENTO_OS', { os_id: 2 });
-    conta = { id: 7, empresa_id: 3 };
+    env.conta = { id: 7, empresa_id: 3 };
     assert.equal(JSON.parse((await sqlite.listarFila())[0].payload).os_id, 1);
     assert.equal((await sqlite.lerCache('agenda')).dados[0].id, 1);
     assert.equal(banco.prepare("SELECT COUNT(*) AS total FROM fila_sync WHERE conta='legado'").get().total, 1);
-    conta.perfil='GESTOR';
+    env.conta.perfil='GESTOR';
     const legado=await sqlite.listarFilaLegada();
     assert.equal(legado.length,1);
     assert.equal(await sqlite.assumirLegado([legado[0].id]),1);
@@ -57,10 +42,10 @@ test('SQLite inicializa, cria índice, isola contas e preserva itens sem dono', 
 test('arquivo de foto só é removido depois da confirmação na fila local',async()=>{
   const item={id:1,tipo:'FOTO_OS',payload:JSON.stringify({os_id:5,tipo:'ASSINATURA',uri:'file:///assinatura.png',metadados:{assinante_nome:'Ana Souza'}}),tentativas:0};
   const itens=[item],ordem=[];let falhar=true;
-  const sync=carregar('mobile/src/services/SyncService.js',['Network','listarFila','registrarFalha','removerFila','api','FileSystem','SecureStore'],[
+  const sync=carregar('mobile/src/services/SyncService.js',['Network','listarFila','registrarFalha','removerFila','api','FileSystem','SecureStore','comFotoParaUpload'],[
     {getNetworkStateAsync:async()=>({isConnected:true})},async()=>itens,async()=>{},async()=>{if(falhar)throw new Error('SQLite ocupado');ordem.push('removerFila');itens.length=0;},
     {uploadFoto:async(_id,_tipo,_arquivo,meta)=>{assert.equal(meta.assinante_nome,'Ana Souza');return {};}},
-    {deleteAsync:async()=>{ordem.push('removerArquivo');}},{getItemAsync:async()=> 'conta'},
+    {deleteAsync:async()=>{ordem.push('removerArquivo');}},{getItemAsync:async()=> 'conta'},async(uri,fn)=>fn(uri),
   ],'tentarSincronizarOffline');
   await sync.tentarSincronizarOffline();assert.deepEqual(ordem,[]);assert.equal(itens.length,1);
   falhar=false;await sync.tentarSincronizarOffline();assert.deepEqual(ordem,['removerFila','removerArquivo']);assert.equal(itens.length,0);

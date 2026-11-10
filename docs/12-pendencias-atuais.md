@@ -1,5 +1,8 @@
 # Pendências atuais — revisão de 29/10/2026
 
+> Registro histórico. Consulte a [revisão de 09/11/2026](./17-revisao-documentacao-2026-11-09.md) para o estado atual. Achados e resultados abaixo pertencem à versão analisada na época.
+
+
 > Implementação posterior: as correções de sessão, acesso, integridade, alertas, relatórios, recuperação e WhatsApp foram trabalhadas no [lote 13](./13-implementacao-pendencias.md). Consulte esse documento para o estado atual e os limites restantes.
 
 Revisão estática do código e dos documentos após as correções e a validação rápida. Não foram repetidos builds ou testes nesta análise. Implementação local não comprova migração, implantação, funcionamento visual ou homologação em aparelho. O backlog 08 continua sendo histórico; este documento define a próxima sequência.

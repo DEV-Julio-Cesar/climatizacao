@@ -3,15 +3,15 @@ import {
   Alert, Linking, Platform, ScrollView, StyleSheet, Switch,
   Text, TouchableOpacity, Vibration, View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
-import { cancelarTodosLembretes } from '../../services/agendaLembretes';
 import { useTheme } from '../../styles/useTheme';
+import { limparCacheDaConta } from '../../database/sqlite';
+import { BASE_URL } from '../../services/api';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,6 +30,17 @@ export default function PerfilScreen({ onLogout, navigation }) {
   const { colors, shadow, isDark } = useTheme();
   const { preferencias, atualizarPreferencia } = useApp();
   const [usuario, setUsuario] = useState({});
+  const [limpandoCache, setLimpandoCache] = useState(false);
+  const limparDadosConsultados = () => Alert.alert('Limpar dados consultados',
+    'Remove o cache desta conta no aparelho. Você precisará de internet para consultar novamente. Atendimentos pendentes bloqueiam a limpeza; fotos, outras contas e dados do servidor não serão apagados.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Limpar cache', onPress: async () => {
+        setLimpandoCache(true);
+        try { const r = await limparCacheDaConta(); Alert.alert('Cache local', `${r.removidos} registros de consulta removidos desta conta.`); }
+        catch (error) { Alert.alert('Limpeza não concluída', error.message); }
+        finally { setLimpandoCache(false); }
+      } },
+    ]);
   const [localizacao, setLocalizacao] = useState(null);
 
   useEffect(() => {
@@ -45,7 +56,6 @@ export default function PerfilScreen({ onLogout, navigation }) {
     const atual = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const dados = { latitude: atual.coords.latitude, longitude: atual.coords.longitude, data: new Date().toISOString() };
     setLocalizacao(dados);
-    await AsyncStorage.setItem('@climasaas/ultima_localizacao', JSON.stringify(dados));
     if (preferencias.vibracao) Vibration.vibrate(120);
   };
 
@@ -67,15 +77,7 @@ export default function PerfilScreen({ onLogout, navigation }) {
     if (preferencias.vibracao) Vibration.vibrate([0, 120, 80, 120]);
   };
 
-  const sair = async () => {
-    await cancelarTodosLembretes().catch(() => {});
-    await Promise.all([
-      SecureStore.deleteItemAsync('climasaas_token'),
-      SecureStore.deleteItemAsync('climasaas_refresh_token'),
-      SecureStore.deleteItemAsync('climasaas_usuario'),
-    ]).catch(() => {});
-    onLogout();
-  };
+  const sair = () => onLogout();
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -256,9 +258,19 @@ export default function PerfilScreen({ onLogout, navigation }) {
         <Text style={styles.secondaryText}>Central de sincronização offline</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.link} onPress={() => Linking.openURL('https://climasaas-api.onrender.com/privacidade')}>
+      <TouchableOpacity style={[styles.action, styles.secondary]} onPress={() => navigation.navigate('Privacidade')}>
+        <Ionicons name="document-text-outline" size={22} color={colors.primary} />
+        <Text style={styles.secondaryText}>Meus dados e solicitações de privacidade</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.link} onPress={() => Linking.openURL(`${BASE_URL}/privacidade`).catch(() => Alert.alert('Privacidade', 'Não foi possível abrir o aviso.'))}>
         <Ionicons name="open-outline" size={18} color={colors.primary} />
         <Text style={styles.linkText}>Política de privacidade</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.action, styles.secondary]} disabled={limpandoCache} onPress={limparDadosConsultados}>
+        <Ionicons name="shield-checkmark-outline" size={22} color={colors.primary} />
+        <Text style={styles.secondaryText}>{limpandoCache ? 'Limpando cache...' : 'Limpar dados consultados nesta conta'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.logout} onPress={sair}>

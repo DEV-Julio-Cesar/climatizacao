@@ -15,6 +15,8 @@ const pararAlertas = require('./src/services/AlertaWorker').iniciar();
 server.on('close', pararAlertas);
 const pararEmails = require('./src/services/EmailWorker').iniciar();
 server.on('close', pararEmails);
+const pararWhatsAppBot = require('./src/services/WhatsAppBotWorker').iniciar();
+server.on('close', pararWhatsAppBot);
 const pararEventos = require('./src/services/EventoService').iniciar();
 server.on('close', pararEventos);
 
